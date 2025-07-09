@@ -27,3 +27,6 @@
 2025-07-09 18:21:29,376 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
 2025-07-09 18:21:29,989 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
 2025-07-09 18:21:29,992 - MCPLogger - INFO - DocGeneratorTools initialized: template=mcp_server/data/templates/proposals/proposal_template.docx, output_dir=mcp_server\data\proposal_generated, prompt_dir=D:\projectwise\mcp_server\prompts
+2025-07-09 19:42:38,677 - MCPLogger - INFO - 10 hasil retrieval untuk 'spesifikasi switch core bank sumsel babel' dengan filter None.
+2025-07-09 20:48:44,828 - MCPLogger - INFO - retrieve_product_context: product=switch, k=5, filter=None
+2025-07-09 20:48:45,925 - MCPLogger - INFO - 5 hasil retrieval untuk 'switch' dengan filter None.
