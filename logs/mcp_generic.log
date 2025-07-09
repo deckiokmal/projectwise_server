@@ -1,0 +1,22 @@
+2025-07-09 01:49:31,906 - MCPLogger - DEBUG - Logger initialized from D:\projectwise\main.py, writing to D:\projectwise\logs\mcp_generic.log
+2025-07-09 02:02:39,035 - MCPLogger - DEBUG - Logger initialized from D:\projectwise\main.py, writing to D:\projectwise\logs\mcp_generic.log
+2025-07-09 02:07:10,616 - MCPLogger - DEBUG - Logger initialized from D:\projectwise\main.py, writing to D:\projectwise\logs\mcp_generic.log
+2025-07-09 02:07:22,419 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
+2025-07-09 02:07:24,188 - MCPLogger - INFO - Tabel tidak ada, membuat tabel baru
+2025-07-09 02:07:24,248 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
+2025-07-09 02:07:24,253 - MCPLogger - INFO - Initialized DocumentGenerator with template: mcp_server\data\templates\proposals\proposal_template.docx
+2025-07-09 02:07:24,702 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
+2025-07-09 02:07:25,271 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
+2025-07-09 02:07:25,275 - MCPLogger - INFO - DocGeneratorTools initialized: template=mcp_server/data/templates/proposals/proposal_template.docx, output_dir=mcp_server\data\proposal_generated, prompt_dir=D:\projectwise\mcp_server\prompts
+2025-07-09 16:46:46,111 - MCPLogger - DEBUG - Logger initialized from D:\projectwise\main.py, writing to D:\projectwise\logs\mcp_generic.log
+2025-07-09 16:46:51,433 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
+2025-07-09 16:46:53,172 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
+2025-07-09 16:46:53,175 - MCPLogger - INFO - Initialized DocumentGenerator with template: mcp_server\data\templates\proposals\proposal_template.docx
+2025-07-09 16:46:53,590 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
+2025-07-09 16:46:54,622 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
+2025-07-09 16:46:54,627 - MCPLogger - INFO - DocGeneratorTools initialized: template=mcp_server/data/templates/proposals/proposal_template.docx, output_dir=mcp_server\data\proposal_generated, prompt_dir=D:\projectwise\mcp_server\prompts
+2025-07-09 16:49:31,747 - MCPLogger - INFO - 'KAK - Renewal Fortinet Sandbox.pdf' diekspor ke Markdown: mcp_server\data\kak_tor_md\KAK - Renewal Fortinet Sandbox.md
+2025-07-09 16:52:11,258 - MCPLogger - INFO - 'RKS Switch Core TTD.pdf' diekspor ke Markdown: mcp_server\data\kak_tor_md\RKS Switch Core TTD.md
+2025-07-09 16:52:51,512 - MCPLogger - INFO - 105 chunk KAK/TOR ditambahkan ke vectorstore.
+2025-07-09 16:56:31,300 - MCPLogger - INFO - 10 hasil retrieval untuk 'ruang lingkup proyek switch core bank sumsel babel' dengan filter None.
+2025-07-09 16:57:36,067 - MCPLogger - INFO - 5 hasil retrieval untuk 'jenis dan jumlah switch di dalam ruang lingkup Bank Sumsel Babel' dengan filter None.
