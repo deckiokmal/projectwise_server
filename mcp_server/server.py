@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP # type: ignore
 from mcp_server.tools.rag_tools import RAGTools
 from mcp_server.tools.docx_tools import DocGeneratorTools
 from mcp_server.settings import Settings
