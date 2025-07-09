@@ -31,21 +31,19 @@
 
 ## Arsitektur Singkat
 
-```
-┌──────────┐      SSE/MCP       ┌────────────┐
-│  Client  │  ───────────────▶ │ FastMCP    │
-│ (CLI/UI) │ ◀───────────────  │  Server    │
-└──────────┘  streaming  JSON  └────────────┘
-                   │
-                   ▼
-          ┌──────────────────┐
-          │  Tools Layer     │  ← Fungsi MCP (RAG, DocX, dsb.)
-          └──────────────────┘
-                   │
-        ┌──────────┴──────────┐
-        │  RAG Vector Store   │ (LanceDB)
-        │  Template Storage   │ (Docx, Markdown)
-        └─────────────────────┘
+```mermaid
+flowchart TD
+    client[Client - CLI/UI ]
+    server[FastMCP Server]
+    tools[Tools Layer<br/> - Fungsi MCP: RAG, DocX, dsb.]
+    vector[RAG Vector Store LanceDB]
+    templates[Template Storage - Docx, Markdown ]
+
+    client -- "HTTP Post" --> server
+    server -- "SSE Streaming JSON" --> client
+    server --> tools
+    tools --> vector
+    tools --> templates
 ```
 
 ---
