@@ -202,6 +202,61 @@ class RAGTools:
         instruksi = template
         return instruksi, combined_context
 
+    def build_summary_tender_payload(
+        self,
+        prompt_instruction_name: str,
+        kak_tor_name: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """
+        Mengembalikan dict:
+            {
+              "instruction": <isi prompt instruction>,
+              "context":     <konten markdown KAK/TOR>
+            }
+
+        Args:
+            prompt_instruction_name : nama file template .txt (tanpa ekstensi)
+            kak_tor_name            : nama *satu* file .md KAK/TOR
+
+        Raises:
+            ValueError      : jika kak_tor_name tidak diberikan
+            FileNotFoundError: jika template atau file .md tidak ditemukan
+        """
+        # 1. ambil template .txt
+        tmpl_path = (
+            Path(self.settings.templates_base_path) / f"{prompt_instruction_name}.txt"
+        )
+        if not tmpl_path.is_file():
+            raise FileNotFoundError(
+                f"Template instruction tidak ditemukan: {tmpl_path}"
+            )
+        instruction = tmpl_path.read_text(encoding="utf-8")
+
+        # 2. direktori default KAK/TOR (tidak berubah-ubah)
+        md_base: Path = Path(self.settings.kak_tor_md_base_path)
+
+        # 3. validasi kak_tor_name
+        if kak_tor_name is None:
+            available = [p.name for p in md_base.glob("*.md")]
+            raise ValueError(
+                "Parameter 'kak_tor_name' wajib diisi.\n"
+                f"Daftar file KAK/TOR yang tersedia: {available}"
+            )
+
+        md_path: Path = md_base / kak_tor_name
+        if not md_path.is_file():
+            available = [p.name for p in md_base.glob("*.md")]
+            raise FileNotFoundError(
+                f"File KAK/TOR '{kak_tor_name}' tidak ditemukan.\n"
+                f"Pastikan nama benar. Pilihan yang tersedia: {available}"
+            )
+
+        # 4. baca markdown
+        md_text = md_path.read_text(encoding="utf-8")
+        context = f"---\n# {md_path.name}\n{md_text}\n"
+
+        return {"instruction": instruction, "context": context}
+
     def retrieval_with_filter(
         self,
         query: str,

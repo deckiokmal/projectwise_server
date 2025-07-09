@@ -20,3 +20,10 @@
 2025-07-09 16:52:51,512 - MCPLogger - INFO - 105 chunk KAK/TOR ditambahkan ke vectorstore.
 2025-07-09 16:56:31,300 - MCPLogger - INFO - 10 hasil retrieval untuk 'ruang lingkup proyek switch core bank sumsel babel' dengan filter None.
 2025-07-09 16:57:36,067 - MCPLogger - INFO - 5 hasil retrieval untuk 'jenis dan jumlah switch di dalam ruang lingkup Bank Sumsel Babel' dengan filter None.
+2025-07-09 18:21:23,087 - MCPLogger - DEBUG - Logger initialized from D:\projectwise\main.py, writing to D:\projectwise\logs\mcp_generic.log
+2025-07-09 18:21:27,734 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
+2025-07-09 18:21:28,961 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
+2025-07-09 18:21:28,963 - MCPLogger - INFO - Initialized DocumentGenerator with template: mcp_server\data\templates\proposals\proposal_template.docx
+2025-07-09 18:21:29,376 - MCPLogger - INFO - Menggunakan OpenAI Embeddings.
+2025-07-09 18:21:29,989 - MCPLogger - INFO - RAGPipeline siap (dim=1536, koleksi='projectwise_knowledge').
+2025-07-09 18:21:29,992 - MCPLogger - INFO - DocGeneratorTools initialized: template=mcp_server/data/templates/proposals/proposal_template.docx, output_dir=mcp_server\data\proposal_generated, prompt_dir=D:\projectwise\mcp_server\prompts

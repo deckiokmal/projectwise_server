@@ -108,6 +108,35 @@ def add_kak_tor_md_knowledge_tool(
 
 
 # ---------------------------------------------------------------------------
+# Build Summary Tender Payload
+# ---------------------------------------------------------------------------
+@mcp.tool(
+    name="build_summary_tender_payload",
+    title="Build Summary Tender Payload",
+    description=(
+        "Menggabungkan prompt instruction (template .txt) dengan satu file "
+        "Markdown KAK/TOR, lalu mengembalikan dict "
+        '{"instruction":…, "context":…}.'
+    ),
+    structured_output=True,
+)
+def build_summary_tender_payload_tool(
+    prompt_instruction_name: str,
+    kak_tor_name: Optional[str] = None,
+) -> Dict[str, str]:
+    """
+    Args:
+        prompt_instruction_name : nama file .txt di folder templates (tanpa ekstensi)
+        kak_tor_name            : nama file .md KAK/TOR
+
+    Returns:
+        instruction : teks prompt instruction (.txt)
+        context     : konten markdown KAK/TOR (.md)
+    """
+    return rag_tools.build_summary_tender_payload(prompt_instruction_name, kak_tor_name)
+
+
+# ---------------------------------------------------------------------------
 # 4. Build instruction & context for LLM
 # ---------------------------------------------------------------------------
 @mcp.tool(
