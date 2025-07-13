@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     prompt_directory: str = "mcp_server/prompts"
     kak_tor_base_path: str = "mcp_server/data/kak_tor"
     kak_tor_md_base_path: str = "mcp_server/data/kak_tor_md"
+    summaries_md_base_path: str = "mcp_server/data/summaries"
     knowledge_base_path: str = "mcp_server/data/product_standard"
     templates_base_path: str = "mcp_server/data/templates/prompts"
     summary_output_directory: str = "mcp_server/data/summaries"
