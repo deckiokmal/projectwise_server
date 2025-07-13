@@ -32,25 +32,34 @@ class DocumentGenerator:
     - Render and save document
     """
 
-    DEFAULT_LIST_KEYS: List[str] = [
-        "daftar_manfaat",
-        "deliverables",
-        "project_assumption",
-    ]
     DEFAULT_OPTIONAL_KEYS: List[str] = [
+        "judul_proposal",
+        "nama_pelanggan",
+        "tanggal_hari_ini",
+        "ringkasan_kebutuhan",
+        "ringkasan_manfaat",
         "executive_summary",
-        "daftar_hardware",
-        "daftar_software",
-        "daftar_lisensi",
-        "daftar_jasa",
-        "scope_of_work",
-        "out_of_scope",
         "response_time",
         "response_detail",
-        "response_description",
+        "response_decscription",
         "resolution_time",
         "resolution_detail",
-        "resolution_description",
+        "resolution_decscription",
+        
+    ]
+    DEFAULT_LIST_KEYS: List[str] = [
+        "list_tujuan",
+        "list_hardware",
+        "list_software",
+        "list_lisensi",
+        "list_jasa",
+        "scope_of_work",
+        "out_of_scope",
+        "deliverables",
+        "project_assumption",
+        "detail_tahapan_metodologi_pelaksanaa_pekerjaan",
+        "timeframe_sesuai_metodologi_pelaksanaan_pekerjaan",
+        "term_and_condition_penawaran_harga",
     ]
     DEFAULT_FILENAME_KEYS: List[str] = [
         "nama_pelanggan",
@@ -84,38 +93,44 @@ class DocumentGenerator:
         if not path.is_file():
             logger.error(f"Template not found: {path}")
             raise TemplateNotFoundError(f"Template .docx not found: {path}")
-        try:
-            self._doc = DocxTemplate(str(path))
-            self.template_path = path
-            self.list_keys = list_keys or list(self.DEFAULT_LIST_KEYS)
-            self.optional_keys = optional_keys or list(self.DEFAULT_OPTIONAL_KEYS)
-            self.filename_keys = filename_keys or list(self.DEFAULT_FILENAME_KEYS)
-            logger.info(f"Initialized DocumentGenerator with template: {path}")
-        except Exception as e:
-            logger.exception(f"Error loading template: {path}")
-            raise DocumentGenerationError(f"Error loading template: {e}")
+        self.template_path = path
+        self.list_keys = list_keys or list(self.DEFAULT_LIST_KEYS)
+        self.optional_keys = optional_keys or list(self.DEFAULT_OPTIONAL_KEYS)
+        self.filename_keys = filename_keys or list(self.DEFAULT_FILENAME_KEYS)
+        logger.info(f"Initialized DocumentGenerator with default template path: {path}")
 
-    def load_template(self, template_path: Union[str, Path]) -> None:
-        """Override the current template with a new .docx file.
-
-        Args:
-            template_path: Path to the new template file
-
-        Raises:
-            TemplateNotFoundError: When the new template is not found
-            DocumentGenerationError: When loading the new template fails
+    def get_placeholders(self) -> List[Dict[str, str]]:
         """
-        path = Path(template_path)
-        if not path.is_file():
-            logger.error(f"Template not found: {path}")
-            raise TemplateNotFoundError(f"Template .docx not found: {path}")
+        Kembalikan daftar placeholder unik beserta tipe data yang diharapkan.
+
+        Returns
+        -------
+        List[Dict[str, str]]
+            Contoh:
+            [
+                {"name": "daftar_hardware",   "type": "list"},
+                {"name": "judul_proposal",    "type": "string"},
+                ...
+            ]
+        Raises
+        ------
+        DocumentGenerationError
+            Bila proses parsing template gagal.
+        """
         try:
-            self._doc = DocxTemplate(str(path))
-            self.template_path = path
-            logger.info(f"Template overridden: {path}")
-        except Exception as e:
-            logger.exception(f"Error overriding template: {path}")
-            raise DocumentGenerationError(f"Error loading template: {e}")
+            tpl = DocxTemplate(str(self.template_path))
+            vars_set = tpl.get_undeclared_template_variables()
+            result = []
+            for name in sorted(vars_set):
+                # Jika nama placeholder termasuk list_keys → tipe list, sisanya string
+                t = "list" if name in self.list_keys else "string"
+                result.append({"name": name, "type": t})
+            return result
+        except Exception as exc:
+            logger.exception("Failed extracting placeholders")
+            raise DocumentGenerationError(
+                f"Gagal membaca placeholder dari {self.template_path}: {exc}"
+            )
 
     def validate_context(self, context: Dict[str, Any]) -> None:
         """Validate that context is a dict.
@@ -167,7 +182,7 @@ class DocumentGenerator:
         output_dir: Union[str, Path],
         override_template: Optional[Union[str, Path]] = None,
     ) -> Path:
-        """Generate document: override template, render with context, and save.
+        """Generate document: load template, render with context, and save.
 
         Args:
             context: Dictionary data for rendering
@@ -181,13 +196,19 @@ class DocumentGenerator:
             DocumentGenerationError: If any step fails
         """
         logger.info("Starting document generation pipeline")
-        if override_template:
-            self.load_template(override_template)
+
+        template_to_use = (
+            Path(override_template) if override_template else self.template_path
+        )
+        if not template_to_use.is_file():
+            raise TemplateNotFoundError(f"Template .docx not found: {template_to_use}")
+
         self.validate_context(context)
         self.normalize_context(context)
         try:
-            self._doc.render(context)
-            logger.info("Template rendered successfully")
+            doc = DocxTemplate(str(template_to_use))
+            doc.render(context)
+            logger.info(f"Template '{template_to_use.name}' rendered successfully")
         except Exception as e:
             logger.exception("Rendering failed")
             raise DocumentGenerationError(f"Rendering failed: {e}")
@@ -197,7 +218,7 @@ class DocumentGenerator:
         filename = self.generate_filename(context)
         file_path = out_path / filename
         try:
-            self._doc.save(str(file_path))
+            doc.save(str(file_path))
             logger.info(f"Document saved at: {file_path}")
             return file_path
         except Exception as e:

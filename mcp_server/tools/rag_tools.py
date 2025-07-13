@@ -118,9 +118,9 @@ class RAGTools:
         else:
             logger.info("Tidak ada chunk KAK/TOR yang ditambahkan.")
 
-    def add_kak_tor_md_knowledge(
+    def add_kak_tor_summaries_knowledge(
         self,
-        markdown_path: Optional[str] = None,
+        markdown_name: Optional[str] = None,
         project: str = "default",
         tahun: str = "2025",
     ) -> None:
@@ -128,37 +128,60 @@ class RAGTools:
         Indeks dokumen Markdown KAK/TOR langsung ke vectorstore tanpa ekspor file.
 
         Args:
-            markdown_path (str, optional): Path ke file .md atau direktori .md.
+            markdown_name (str, optional): Nama file .md.
             project (str): Metadata project.
             tahun (str): Metadata tahun.
         """
-        base = markdown_path or self.settings.kak_tor_md_base_path
-        path = Path(base)
-        if path.is_file():
-            md_files = [path]
-        else:
-            md_files = list(path.glob("*.md"))
+        base = Path(self.settings.summaries_md_base_path)
+        # Daftar semua .md yang tersedia
+        available_files = [p.name for p in base.glob("*.md")]
 
-        if not md_files:
-            logger.warning(f"Tidak ada file Markdown di {base}.")
+        if not markdown_name:
+            logger.warning(
+                "Tidak ada nama file yang diberikan. File .md yang tersedia: "
+                f"{available_files}"
+            )
             return
 
-        entries: List[Dict[str, Any]] = []
-        for md in md_files:
-            try:
-                # Convert markdown to document and chunk
-                result = DocumentConverter().convert(source=str(md))
-                chunks = self.pipeline._chunk_document(
-                    result.document, md.name, project, tahun
-                )
-                entries.extend(chunks)
-                logger.info(f"'{md.name}' chunk diindeks sebagai Markdown KAK/TOR.")
-            except Exception as e:
-                logger.error(f"Gagal proses Markdown '{md.name}': {e}")
+        name_stem = markdown_name.strip()
+        # Kandidat: exact, normalized, contains
+        candidates = [
+            base / f"{name_stem}.md",
+            base / f"{name_stem.lower().replace(' ', '_')}.md",
+        ]
+        # fallback: any file yang stem-nya mengandung name_stem (case-insensitive)
+        candidates += [
+            p for p in base.glob("*.md") if name_stem.lower() in p.stem.lower()
+        ]
 
-        if entries:
-            self.pipeline.table.add(entries)
-            logger.info(f"{len(entries)} chunk Markdown KAK/TOR ditambahkan.")
+        # Pilih file pertama yang ada
+        file_path = next((p for p in candidates if p.exists()), None)
+
+        if not file_path:
+            logger.warning(
+                f"File '{markdown_name}.md' tidak ditemukan.\n"
+                f"File .md yang tersedia di {base}: {available_files}"
+            )
+            return
+
+        # Proses hanya file_path
+        try:
+            # Convert markdown ke dokumen dan chunk
+            result = DocumentConverter().convert(source=str(file_path))
+            chunks = self.pipeline._chunk_document(
+                result.document, file_path.name, project, tahun
+            )
+            if chunks:
+                self.pipeline.table.add(chunks)
+                logger.info(
+                    f"{len(chunks)} chunk dari '{file_path.name}' berhasil diindeks."
+                )
+            else:
+                logger.warning(
+                    f"Tidak ada chunk yang dihasilkan dari '{file_path.name}'."
+                )
+        except Exception as e:
+            logger.error(f"Gagal memproses Markdown '{file_path.name}': {e}")
 
     def build_instruction_context(
         self,

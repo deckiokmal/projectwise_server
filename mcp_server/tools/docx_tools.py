@@ -126,6 +126,25 @@ class DocGeneratorTools:
             logger.exception("extract_document_text failed")
             return {"status": "failure", "error": str(e)}
 
+    def get_template_placeholders(self) -> Dict[str, Any]:
+        """
+        Get a list of all valid placeholders from the default .docx template.
+
+        Returns:
+            Dict with:
+              - status: 'success' or 'failure'
+              - placeholders: List of placeholder strings (on success)
+              - error: Error message (on failure)
+        """
+        try:
+            # DocumentGenerator sudah diinisialisasi dengan template default,
+            # jadi kita bisa langsung mengambil placeholder-nya.
+            placeholders = self.generator.get_placeholders()
+            return {"status": "success", "placeholders": placeholders}
+        except Exception as e:
+            logger.exception("get_template_placeholders failed")
+            return {"status": "failure", "error": str(e)}
+
     def generate_proposal(
         self,
         context: Dict[str, Any],
@@ -147,12 +166,11 @@ class DocGeneratorTools:
         """
         try:
             logger.info("generate_proposal: starting document generation")
-            if override_template:
-                self.generator.load_template(override_template)
 
             output_path = self.generator.generate(
                 context=context,
                 output_dir=self.output_dir,
+                override_template=override_template,
             )
 
             product_id = context.get("judul_proposal") or context.get(
