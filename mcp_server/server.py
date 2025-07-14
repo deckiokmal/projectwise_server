@@ -158,7 +158,7 @@ def ingest_kak_tor_summaries_knowledge_tool(
 
 
 # ---------------------------------------------------------------------------
-# 4. List KAK/TOR Files
+# 4. List KAK/TOR Files di directory data/kak_tor_md
 # ---------------------------------------------------------------------------
 @mcp.tool(
     name="list_kak_files",
