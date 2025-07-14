@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
 import json
@@ -26,20 +26,19 @@ mcp = FastMCP(
 rag_tools = RAGTools()
 doc_tools = DocGeneratorTools()
 
+
 # ---------------------------------------------------------------------------
 # 1. Ingest product-standard PDFs into vectorstore
 # ---------------------------------------------------------------------------
-
-
 @mcp.tool(
-    name="add_product_knowledge",
+    name="ingest_product_knowledge",
     title="Ingest Product Knowledge",
     description=(
         "Tambahkan seluruh file PDF di direktori `product_standard` ke vectorstore RAG "
         "sebagai product knowledge dengan metadata `project` dan `tahun`."
     ),
 )
-def add_product_knowledge_tool(
+def ingest_product_knowledge_tool(
     base_dir: Optional[str] = None,
     project_name: str = "product_standard",
     tahun: str = "2025",
@@ -73,17 +72,15 @@ def add_product_knowledge_tool(
 # ---------------------------------------------------------------------------
 # 2. Ingest KAK/TOR PDFs → Markdown → vectorstore
 # ---------------------------------------------------------------------------
-
-
 @mcp.tool(
-    name="add_kak_tor_knowledge",
+    name="ingest_kak_tor_knowledge",
     title="Ingest KAK/TOR Documents",
     description=(
-        "Konversi seluruh PDF KAK/TOR di direktori ke Markdown, simpan file, lalu indeks "
+        "Konversi seluruh PDF KAK/TOR di direktori kak_tor ke Markdown, simpan file, lalu indeks "
         "ke vectorstore RAG dengan metadata custom."
     ),
 )
-def add_kak_tor_knowledge_tool(
+def ingest_kak_tor_knowledge_tool(
     project: Optional[str] = None,
     tahun: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -114,23 +111,20 @@ def add_kak_tor_knowledge_tool(
 
 
 # ---------------------------------------------------------------------------
-# 3. Ingest KAK/TOR Markdown → vectorstore
+# 3. Ingest KAK/TOR Summaries Markdown → vectorstore
 # ---------------------------------------------------------------------------
-
-
 @mcp.tool(
-    name="add_kak_tor_summaries_knowledge",
+    name="ingest_kak_tor_summaries_knowledge",
     title="Ingest summaries KAK/TOR Markdown",
     description=(
-        "STEP 3 – FINAL. Panggil hanya setelah Anda MEMBANGUN sendiri JSON `markdown_name`, `project`, dan `tahun` "
-        "yang MENGISI SEMUA arguments.\n"
+        "Indeks file atau direktori Markdown langsung ke dalam vector store RAG.\n"
         "Args:\n"
         "  markdown_name: str file dari save_summary_markdown_tool.\n"
         "  project: str nama proyek.\n"
         "  tahun: str tahun dokumen.\n"
     ),
 )
-def add_kak_tor_summaries_knowledge_tool(
+def ingest_kak_tor_summaries_knowledge_tool(
     markdown_name: Optional[str] = None,
     project: str = "default",
     tahun: str = "2025",
@@ -164,21 +158,30 @@ def add_kak_tor_summaries_knowledge_tool(
 
 
 # ---------------------------------------------------------------------------
-# 4. Build Summary Tender Payload
+# 4. List KAK/TOR Files
 # ---------------------------------------------------------------------------
-@mcp.tool()
+@mcp.tool(
+    name="list_kak_files",
+    title="List KAK/TOR Files",
+    description=(
+        "Tampilkan seluruh list nama files KAK/TOR di direktori `kak_tor_md_base_path`"
+    ),
+)
 def list_kak_files() -> list[str]:
     base = Path(settings.kak_tor_md_base_path)
     files = [f.name for f in base.glob("*.md")]
     return files
 
 
+# ---------------------------------------------------------------------------
+# 5. Build Summary Tender Payload
+# ---------------------------------------------------------------------------
 @mcp.tool(
     name="build_summary_tender_payload",
     title="Build Summary Tender Payload",
     description=(
-        "Gabungkan prompt instruction (.txt) dengan file Markdown KAK/TOR, "
-        "kembali dict {instruction, context}."
+        "Gabungkan prompt instruction (.txt) dengan file Markdown KAK/TOR di direktori `kak_tor_md_base_path`.\n"
+        "Return: dict {instruction, context}"
     ),
 )
 def build_summary_tender_payload_tool(
@@ -238,58 +241,19 @@ def build_summary_tender_payload_tool(
 
 
 # ---------------------------------------------------------------------------
-# 5. Build instruction & context for LLM
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="build_instruction_context",
-    title="Build Instruction Context",
-    description="Gabungkan template prompt dengan markdown KAK/TOR terpilih.",
-)
-def build_instruction_context_tool(
-    template_name: str,
-    kak_md_dir: Optional[str] = None,
-    selected_files: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """Membangun payload untuk LLM dari template instruksi dan file konteks.
-
-    Fungsi ini menggabungkan sebuah template instruksi (prompt) dengan konten
-    dari satu atau lebih file Markdown (misalnya, KAK/TOR). Hasilnya adalah
-    sebuah dictionary yang siap digunakan sebagai input untuk model bahasa (LLM),
-    memisahkan dengan jelas antara instruksi tugas dan data konteks.
-
-    Args:
-        template_name (str): Nama file template prompt (tanpa ekstensi .txt)
-            yang terletak di direktori `settings.templates_base_path`.
-        kak_md_dir (Optional[str], optional): Path ke direktori yang berisi
-            file-file Markdown untuk konteks. Jika tidak disediakan, akan
-            menggunakan path default dari `settings.kak_tor_md_base_path`.
-            Defaultnya adalah None.
-        selected_files (Optional[List[str]], optional): Daftar nama file
-            Markdown spesifik (termasuk ekstensi .md) yang akan digabungkan
-            sebagai konteks. Jika None, semua file di `kak_md_dir` akan
-            digunakan. Defaultnya adalah None.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary dengan kunci 'instruksi' dan 'context'.
-    """
-    instruksi, context = rag_tools.build_instruction_context(
-        template_name, kak_md_dir, selected_files
-    )
-    return {"instruksi": instruksi, "context": context}
-
-
-# ---------------------------------------------------------------------------
 # 6. Retrieval with similarity + metadata filter
 # ---------------------------------------------------------------------------
-
-
 @mcp.tool(
     name="rag_retrieval",
     title="RAG Retrieval",
     description=(
-        "Similarity search dengan filter metadata, hasilkan potongan teks relevan + citation."
+        "Gunakan tool ini jika pengguna menanyakan tentang detail produk, rincian proyek, "
+        "atau isi dokumen KAK/TOR tender. "
+        "Tool melakukan similarity-search (RAG) dengan filter metadata pada knowledge-base, "
+        "lalu mengembalikan potongan teks paling relevan beserta citation."
+        "metadata_filter (Optional[Dict[str, Any]], optional): Dictionary untuk "
+            "memfilter hasil berdasarkan metadata. Contoh: `{'project': 'proyek_a'}`."
+            "Defaultnya adalah None."
     ),
 )
 def rag_retrieval_tool(
@@ -325,263 +289,13 @@ def rag_retrieval_tool(
 
 
 # ---------------------------------------------------------------------------
-# 7. Reset / rebuild vectorstore
+# 7. Generate Proposal Document (.docx)
 # ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="reset_vectordb",
-    title="Reset Vector Store",
-    description="Hapus seluruh data dan rebuild tabel vectorstore kosong.",
-)
-def reset_vectorstore_tool() -> Dict[str, Any]:
-    """Menghapus seluruh data dan membuat ulang vector store dari awal.
-
-    Fungsi ini melakukan operasi yang bersifat destruktif dengan menghapus
-    seluruh koleksi data (chunks dan embeddings) dari vector store. Setelah
-    penghapusan, sebuah tabel kosong baru akan dibuat.
-
-    Peringatan: Gunakan dengan hati-hati karena tindakan ini tidak dapat
-    diurungkan dan akan menghapus semua pengetahuan yang telah diindeks.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary yang mengonfirmasi bahwa proses
-            reset telah selesai. Contoh: {"status": "Vectorstore berhasil di-reset."}
-    """
-    result = rag_tools.reset_knowledge_base()
-    return {"status": "Vectorstore berhasil di-reset.", "result": result}
-
-
-# ---------------------------------------------------------------------------
-# 8. Update metadata massal
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="update_chunk_metadata",
-    title="Update Chunk Metadata",
-    description="Perbarui metadata untuk semua chunk sesuai filter.",
-)
-def update_chunk_metadata_tool(
-    metadata_filter: Dict[str, Any],
-    new_metadata: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Memperbarui metadata dari sekumpulan chunk di vector store secara massal.
-
-    Fungsi ini memungkinkan pembaruan metadata untuk beberapa chunk sekaligus.
-    Ia akan mencari semua chunk yang cocok dengan kriteria pada `metadata_filter`,
-    kemudian memperbarui atau menambahkan field metadata mereka dengan data dari
-    `new_metadata`.
-
-    Ini sangat berguna untuk mengoreksi atau memperkaya informasi secara massal,
-    misalnya mengubah label tahun atau menambahkan tag status pada sekelompok
-    dokumen.
-
-    Args:
-        metadata_filter (Dict[str, Any]): Dictionary yang berfungsi sebagai filter
-            untuk memilih chunk mana yang akan diperbarui. Kunci adalah nama field
-            metadata dan nilai adalah nilai yang harus cocok.
-            Contoh: `{"project": "proyek_a"}`.
-        new_metadata (Dict[str, Any]): Dictionary yang berisi field dan nilai
-            metadata baru yang akan diterapkan pada chunk yang cocok. Field yang
-            sudah ada akan ditimpa.
-            Contoh: `{"tahun": "2024", "status": "final"}`.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary yang melaporkan jumlah chunk yang
-            berhasil diperbarui. Contoh: `{"updated": 50}`.
-    """
-    updated = rag_tools.update_chunk_metadata(metadata_filter, new_metadata)
-    return {"updated": updated}
-
-
-# ---------------------------------------------------------------------------
-# 9. Get vectorstore statistics
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="get_vectorstore_stats",
-    title="Get Vectorstore Statistics",
-    description="Ambil statistik vectorstore (rows, size, project unik, distribusi tahun).",
-)
-def get_vectorstore_stats_tool() -> Dict[str, Any]:
-    """Mengambil statistik dari vector store.
-
-    Fungsi ini mengumpulkan dan mengembalikan data statistik mengenai
-    basis pengetahuan (vector store), memberikan gambaran umum tentang
-    isinya. Statistik yang dikembalikan meliputi:
-    - Jumlah total chunk (baris) yang tersimpan.
-    - Ukuran total vector store di disk (dalam MB).
-    - Daftar unik dari semua nama proyek yang ada di metadata.
-    - Distribusi jumlah chunk berdasarkan tahun.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary yang berisi statistik, contoh:
-            {
-                "total_rows": 1234,
-                "size_mb": 56.78,
-                "projects": ["proyek_a", "proyek_b"],
-                "tahun_distribution": {"2024": 800, "2025": 434}
-            }
-    """
-    return rag_tools.get_vectorstore_stats()
-
-
-# ---------------------------------------------------------------------------
-# 10. Rebuild all embeddings
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="rebuild_all_embeddings",
-    title="Rebuild All Embeddings",
-    description="Hitung ulang embedding semua chunk (gunakan model baru).",
-)
-def rebuild_all_embeddings_tool(batch_size: int = 100) -> Dict[str, Any]:
-    """Menghitung ulang dan memperbarui embeddings untuk semua chunk di vector store.
-
-    Fungsi ini melakukan proses pemeliharaan dengan membaca semua teks dari
-    chunk yang ada, menghitung ulang vector embedding-nya menggunakan model
-    embedding yang saat ini dikonfigurasi, dan kemudian membangun ulang
-    vector store dengan data yang baru.
-
-    Proses ini sangat berguna ketika model embedding diperbarui atau diganti,
-    untuk memastikan konsistensi data.
-
-    Peringatan: Operasi ini bisa memakan waktu lama dan sumber daya yang
-    intensif, tergantung pada jumlah data di vector store.
-
-    Args:
-        batch_size (int, optional): Ukuran batch untuk memproses chunk saat
-            membangun ulang. Defaultnya adalah 100.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary yang mengonfirmasi penyelesaian proses.
-    """
-    rag_tools.rebuild_all_embeddings(batch_size)
-    return {"status": "Rebuild embeddings selesai."}
-
-
-# ---------------------------------------------------------------------------
-# 11. List unique metadata values
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="list_metadata_values",
-    title="List Metadata Values",
-    description="Kembalikan daftar unik nilai untuk field metadata tertentu.",
-)
-def list_metadata_values_tool(field: str) -> Dict[str, Any]:
-    """Mengambil daftar nilai unik untuk field metadata tertentu dari vector store.
-
-    Fungsi ini sangat berguna untuk menemukan nilai-nilai yang tersedia
-    untuk pemfilteran dalam pencarian. Misalnya, untuk mendapatkan semua
-    nama proyek atau tahun yang telah diindeks.
-
-    Args:
-        field (str): Nama field metadata yang ingin diperiksa.
-            Contoh: 'project', 'tahun', 'filename'.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary dengan kunci 'values' yang berisi
-            daftar nilai unik yang ditemukan untuk field tersebut.
-            Contoh: {"values": ["proyek_a", "proyek_b", "proyek_c"]}
-    """
-    values = rag_tools.list_metadata_values(field)
-    return {"values": values}
-
-
-# ---------------------------------------------------------------------------
-# 12. Retrieve Product Context via RAG + Prompt Template
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="retrieve_product_context",
-    title="Retrieve Product Context",
-    description="Ambil konteks produk via RAG + template prompt.",
-)
-def retrieve_product_context_tool(
-    product: str,
-    k: Optional[int] = None,
-    metadata_filter: Optional[Dict[str, Any]] = None,
-    prompt_template: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Mengambil konteks produk menggunakan RAG dan menggabungkannya dengan template prompt.
-
-    Fungsi ini berfungsi sebagai jembatan ke sistem RAG untuk mencari informasi
-    relevan tentang suatu produk. Hasil pencarian (konteks) kemudian dapat
-    digabungkan dengan sebuah template instruksi (prompt) untuk mempersiapkan
-    input yang siap digunakan oleh model bahasa (LLM) dalam tugas seperti
-    pembuatan proposal.
-
-    Args:
-        product (str): Nama atau deskripsi produk yang akan dicari konteksnya
-            di dalam basis pengetahuan.
-        k (Optional[int], optional): Jumlah potongan (chunk) teratas yang paling
-            relevan untuk diambil. Jika tidak disediakan, akan menggunakan nilai
-            default yang dikonfigurasi dalam sistem RAG. Defaultnya adalah None.
-        metadata_filter (Optional[Dict[str, Any]], optional): Filter untuk
-            mempersempit pencarian berdasarkan metadata yang ada.
-            Contoh: `{"tahun": "2024"}`. Defaultnya adalah None.
-        prompt_template (Optional[str], optional): Nama file template prompt
-            (tanpa ekstensi .txt) yang akan digabungkan dengan konteks.
-            File ini harus berada di direktori prompt yang telah dikonfigurasi.
-            Defaultnya adalah None.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary yang berisi hasil retrieval.
-            Contoh sukses: `{"status": "success", "context": [...], "instruction": "..."}`.
-            Contoh gagal: `{"status": "failure", "error": "pesan error"}`.
-    """
-    return doc_tools.retrieve_product_context(
-        product, k, metadata_filter, prompt_template
-    )
-
-
-# ---------------------------------------------------------------------------
-# 13. Extract Text from Document → Markdown
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    name="extract_document_text",
-    title="Extract Document Text",
-    description="Ekstrak teks dari dokumen (.pdf/.docx) → markdown.",
-)
-def extract_document_text_tool(file_path: str) -> Dict[str, Any]:
-    """Mengekstrak teks dari file dokumen dan mengonversinya ke format Markdown.
-
-    Fungsi ini mengambil path ke sebuah file dokumen (seperti PDF, DOCX, atau
-    Markdown) dan mengekstrak konten teksnya. Hasilnya dikembalikan dalam
-    format Markdown, yang ideal untuk diproses lebih lanjut oleh model bahasa
-    (LLM).
-
-    Args:
-        file_path (str): Path lokal ke file dokumen yang akan diekstrak.
-            Format yang didukung termasuk .pdf, .docx.
-
-    Returns:
-        Dict[str, Any]: Sebuah dictionary yang berisi status dan hasil ekstraksi.
-            - Jika berhasil: `{"status": "success", "text": "<teks_markdown>"}`
-            - Jika gagal: `{"status": "failure", "error": "<pesan_error>"}`
-    """
-    return doc_tools.extract_document_text(file_path)
-
-
-# ---------------------------------------------------------------------------
-# 14. Generate Proposal Document (.docx)
-# ---------------------------------------------------------------------------
-
-
 @mcp.tool(
     name="generate_proposal_docx",
-    title="(STEP-3) Generate Proposal .docx",
+    title="Generate Proposal .docx",
     description=(
-        "STEP 3 – FINAL. Panggil hanya setelah Anda MEMBANGUN sendiri JSON `context` "
-        "yang MENGISI SEMUA placeholder.\n"
+        "Generate docx proposal dari template default dengan data konteks.\n"
         "Args:\n"
         "  context: dict mapping setiap placeholder (list atau string) ke isinya.\n"
         "Contoh:\n"
@@ -619,13 +333,11 @@ def generate_proposal_docx_tool(
 
 
 # ---------------------------------------------------------------------------
-# 15. Get Template Placeholders
+# 8. Get Template Placeholders
 # ---------------------------------------------------------------------------
-
-
 @mcp.tool(
     name="get_template_placeholders",
-    title="STEP 2. Kembalikan array placeholder; simpan ke memori untuk mencocokkan context.",
+    title="Kembalikan array placeholder; simpan ke memori untuk mencocokkan context.",
     description=(
         "Dapatkan daftar semua placeholder (variabel) yang valid dari template proposal .docx default. "
         "Gunakan ini untuk mengetahui key apa saja yang harus ada di dalam parameter `context` "
@@ -649,11 +361,11 @@ def get_template_placeholders_tool() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 16. Read Markdown KAK/TOR
+# 9. Read Markdown KAK/TOR
 # ---------------------------------------------------------------------------
 @mcp.tool(
     name="read_project_markdown",
-    title="STEP 1 dari pembuatan proposal. Hasil text akan dipakai untuk menyusun context.",
+    title="Baca markdown text akan dipakai untuk menyusun context dalam pembuatan proposal.",
     description="Baca markdown KAK/TOR proyek dan kembalikan sebagai string.",
 )
 def read_project_markdown(project_name: str) -> Dict[str, Any]:
@@ -682,10 +394,8 @@ def read_project_markdown(project_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# MCP Tool Definition
+# 10. Save summaries markdown files to filesystem
 # ---------------------------------------------------------------------------
-
-
 @mcp.tool(
     name="save_summary_markdown",
     title="Save Summary as Markdown (.md)",
