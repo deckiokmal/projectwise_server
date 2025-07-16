@@ -1,14 +1,18 @@
 from __future__ import annotations
 from typing import Dict, Any, Optional
 from pathlib import Path
-from datetime import datetime
 import json
 
 from mcp.server.fastmcp import FastMCP  # type: ignore
 from mcp_server.tools.rag_tools import RAGTools
 from mcp_server.tools.docx_tools import DocGeneratorTools
 from mcp_server.settings import Settings
-from mcp_server.utils.helper import _slugify, _to_markdown, _normalize_md_name
+from mcp_server.utils.helper import (
+    _slugify,
+    _to_markdown,
+    _normalize_md_name,
+    _list_files,
+)
 
 
 settings = Settings()  # type: ignore
@@ -168,8 +172,7 @@ def ingest_kak_tor_summaries_knowledge_tool(
     ),
 )
 def list_kak_files() -> list[str]:
-    base = Path(settings.kak_tor_md_base_path)
-    files = [f.name for f in base.glob("*.md")]
+    files = _list_files(settings.kak_tor_md_base_path)
     return files
 
 
@@ -252,8 +255,8 @@ def build_summary_tender_payload_tool(
         "Tool melakukan similarity-search (RAG) dengan filter metadata pada knowledge-base, "
         "lalu mengembalikan potongan teks paling relevan beserta citation."
         "metadata_filter (Optional[Dict[str, Any]], optional): Dictionary untuk "
-            "memfilter hasil berdasarkan metadata. Contoh: `{'project': 'proyek_a'}`."
-            "Defaultnya adalah None."
+        "memfilter hasil berdasarkan metadata. Contoh: `{'project': 'proyek_a'}`."
+        "Defaultnya adalah None."
     ),
 )
 def rag_retrieval_tool(
@@ -400,7 +403,8 @@ def read_project_markdown(project_name: str) -> Dict[str, Any]:
     name="save_summary_markdown",
     title="Save Summary as Markdown (.md)",
     description=(
-        "Simpan string *summary* ke file .md di direktori yang sudah ditentukan.\n\n"
+        "Simpan string *summary* ke file .md di direktori yang sudah ditentukan.\n"
+        "Anda WAJIB membuat nama proyek secara otomatis dengan format nama_pelanggan_nama_proyek.\n"
         "Argumen:\n  • summary (str): Teks ringkasan yang akan disimpan.\n  • project (str, optional): Nama proyek untuk penamaan file.\n\n"
         'Return: {"status": "success"|"failure", "file": <path>, "error": <msg>}'
     ),
@@ -411,30 +415,26 @@ def save_summary_markdown_tool(
 ) -> Dict[str, Any]:
     """
     Simpan *summary* (JSON) menjadi file Markdown di
-    ``settings.summaries_md_base_path``.
+    ``settings.summaries_md_base_path`` dengan nama file
+    <slug_project>.md (tanpa timestamp).
     """
     # ----------------- Dir target -----------------
     base_dir = Path(settings.summaries_md_base_path).expanduser().resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
 
+    # Buat slug dari project (nama file asal tanpa ekstensi)
     slug = _slugify(project) if project else "summary"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = base_dir / f"{slug}_{timestamp}.md"
+    file_path = base_dir / f"{slug}.md"
 
     # ----------------- Normalisasi summary --------
-    # 1) Jika bentuk {'summary': '{...json...'} → ambil field dalam
     if (
         isinstance(summary, dict)
         and "summary" in summary
         and isinstance(summary["summary"], str)
     ):
         summary_json_str = summary["summary"]
-
-    # 2) Jika sudah dict Python → dump ke JSON
     elif isinstance(summary, dict):
         summary_json_str = json.dumps(summary, ensure_ascii=False, indent=2)
-
-    # 3) Jika string → anggap string JSON (atau teks apapun)
     elif isinstance(summary, str):
         summary_json_str = summary
     else:

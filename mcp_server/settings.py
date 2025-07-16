@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
 
     # Direktori penyimpanan dan dokumen
-    vector_store_path: str = "mcp_server/vectordb"
+    vector_store_path: str = "lancedb_storage"
     prompt_directory: str = "mcp_server/prompts"
     kak_tor_base_path: str = "mcp_server/data/kak_tor"
     kak_tor_md_base_path: str = "mcp_server/data/kak_tor_md"

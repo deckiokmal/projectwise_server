@@ -15,5 +15,4 @@ wheels/
 # Logs
 logs/
 
-# data_sampah
-data_sampah/
+lancedb_storage/
