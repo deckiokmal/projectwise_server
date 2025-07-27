@@ -1,11 +1,13 @@
+# utils/rag_pipeline.py
+import time
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
-from pydantic import BaseModel
+from mcp_server.utils.schemas import ChunkMetadata
 
-from docling.document_converter import DocumentConverter
 from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.embeddings import OllamaEmbeddings
@@ -14,19 +16,9 @@ from mcp_server.settings import Settings
 from mcp_server.utils.logger import logger
 
 
-# —————————————————————————————————————————
-#  Skema untuk metadata & chunk
-# —————————————————————————————————————————
-
-
-class ChunkMetadata(LanceModel):
-    filename: Optional[str]
-    source: Optional[str]
-    chunk_index: Optional[int]
-    project: Optional[str]
-    tahun: Optional[str]
-
-
+# ──────────────────────────────────────────────────────────────
+# Skema untuk menyimpan metadata tiap chunk dokumen
+# ──────────────────────────────────────────────────────────────
 def build_chunks_schema(vector_dim: int):
     class Chunks(LanceModel):
         text: str
@@ -36,303 +28,428 @@ def build_chunks_schema(vector_dim: int):
     return Chunks
 
 
-class RagQuery(BaseModel):
-    question: str
-
-
-class RagResponse(BaseModel):
-    answer: str
-
-
-# —————————————————————————————————————————
-#  RAGPipeline: modular & DRY
-# —————————————————————————————————————————
-
-
+# ──────────────────────────────────────────────────────────────
+# RAGPipeline Async — mendukung chunking, indexing, dan retrieval berbasis LanceDB
+# ──────────────────────────────────────────────────────────────
 class RAGPipeline:
     def __init__(self):
         """
-        Inisialisasi RAGPipeline:
+        Inisialisasi pipeline RAG:
         - Membaca konfigurasi dari Settings.
-        - Menentukan path dan nama koleksi.
-        - Memilih dan menginisialisasi model embedding (OpenAI atau Ollama).
-        - Menghitung dimensi vektor dan membangun schema chunk.
-        - Menghubungkan ke LanceDB, membuka atau membuat tabel vectorstore.
+        - Mengatur embedding model.
+        - Membuat koneksi ke LanceDB.
         """
-        settings = Settings()  # type: ignore
+        self.settings = Settings()  # type: ignore
+        self.product_base_path = Path(self.settings.product_base_path)
+        self.collection_name = self.settings.collection_name
 
-        # Inisialisasi paths & nama koleksi
-        self.base_path = Path(settings.knowledge_base_path)
-        self.collection_name = settings.collection_name
-        self.persist_dir = settings.vector_store_path
-
-        # Pilih embedding
-        if settings.embedding_model.startswith("text-embedding"):
+        # Pilih jenis embedding berdasarkan konfigurasi
+        if self.settings.embedding_model.startswith("text-embedding"):
             self.embed = OpenAIEmbeddings(
-                model=settings.embedding_model,
-                api_key=settings.openai_api_key,  # type: ignore
+                model=self.settings.embedding_model,
+                api_key=self.settings.openai_api_key,  # type: ignore
             )
-            logger.info("Menggunakan OpenAI Embeddings.")
+            logger.info("Menggunakan OpenAI Async Embeddings.")
         else:
             self.embed = OllamaEmbeddings(
-                model=settings.embedding_model,
-                base_url=settings.ollama_host,
+                model=self.settings.embedding_model,
+                base_url=self.settings.ollama_host,
             )
             logger.info("Menggunakan Ollama Embeddings.")
 
-        # Hitung dimensi vektor & buat schema
-        example_vector = self.embed.embed_query("dimension_check")
+        self.vector_dim: int = self.settings.vector_dim
+        self._run_sync(self.db_connect())
+
+    # LanceDB utility methods
+    async def db_connect(self):
+        # Hitung dimensi vektor dari contoh input
+        example_vector = await self.embed.aembed_query("dimension_check")
         self.vector_dim = len(example_vector)
         Chunks = build_chunks_schema(self.vector_dim)
 
         # Koneksi ke LanceDB
-        self.db = lancedb.connect(self.persist_dir)
-        try:
-            self.table = self.db.open_table(self.collection_name)
-            # Cek integritas
-            _ = self.table.count_rows()
-        except Exception:
-            logger.info("Tabel tidak ada, membuat tabel baru")
-            self.table = self.db.create_table(
-                self.collection_name, schema=Chunks, mode="create"
+        if self.settings.db_connection == "s3":
+            self.db = await lancedb.connect_async(
+                self.settings.vector_store_path,
+                storage_options={
+                    "aws_access_key_id": self.settings.aws_access_key_id,
+                },
+            )
+        elif self.settings.db_connection == "cloud":
+            self.db = await lancedb.connect_async(
+                self.settings.vector_store_path,
+                api_key=self.settings.cloud_api_key,
+                client_config={"retry_config": {"retries": 5}},
+            )
+        else:
+            # Default ke local
+            self.db = await lancedb.connect_async(self.settings.vector_store_path)
+            logger.info(
+                f"Menggunakan local vector store di {self.settings.vector_store_path}"
             )
 
+        # Buat tabel jika belum ada
+        try:
+            self.table = await self.db.open_table(self.collection_name)
+            _ = await self.table.count_rows()  # validasi tabel ada
+        except Exception:
+            logger.info("Tabel tidak ditemukan, membuat baru...")
+            self.table = await self.db.create_table(
+                self.collection_name, schema=Chunks, mode="overwrite"
+            )
         logger.info(
-            f"RAGPipeline siap (dim={self.vector_dim}, koleksi='{self.collection_name}')."
+            f"RAGPipeline siap (dim={self.vector_dim}, koleksi='{await self.db.table_names()}')."
         )
 
-    # —————————————————————————————————————————
-    #  Utility: validasi & chunking
-    # —————————————————————————————————————————
+    def _run_sync(self, coro):
+        """Utility internal untuk menjalankan async function secara sinkron di init."""
+        import asyncio
+
+        return asyncio.get_event_loop().run_until_complete(coro)
 
     def _validate_vector_dim(self, vector: List[float]):
         """
-        Memastikan vektor embedding memiliki panjang yang sesuai dengan dimensi yang disimpan.
-
-        Args:
-            vector (List[float]): Vektor embedding yang dihasilkan model.
-
-        Raises:
-            ValueError: Jika panjang `vector` tidak sama dengan `self.vector_dim`.
+        Validasi panjang vektor embedding.
         """
         if len(vector) != self.vector_dim:
+            logger.debug(f"Ukuran vector: {len(vector)} | target: {self.vector_dim}")
             raise ValueError(
-                f"Dimensi vektor salah: embedding={len(vector)}, store={self.vector_dim}"
+                f"Dimensi vektor salah: {len(vector)} != {self.vector_dim}"
             )
 
-    def _chunk_document(
-        self, dl_doc, filename: str, project: str, tahun: str
-    ) -> List[Dict[str, Any]]:
+    def _sanitize(self, meta: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Memecah dokumen menjadi potongan (chunk), menghitung embedding untuk tiap chunk,
-        dan menyiapkan struktur entri untuk diindeks.
+        Sanitasi metadata:
+        - Hilangkan spasi
+        - Ubah semua string ke lowercase
+        - Angka tetap dipertahankan (chunk_index)
+        - Kosong atau None → None
+        """
+        clean = {}
+        for k in [
+            "filename",
+            "source",
+            "chunk_index",
+            "pelanggan",
+            "category",
+            "product",
+            "tahun",
+            "project",
+        ]:
+            val = meta.get(k, None)
+
+            if k == "chunk_index":
+                try:
+                    clean[k] = int(val) if val not in (None, "", "null") else None
+                except Exception:
+                    clean[k] = None
+            else:
+                if isinstance(val, str) and val.strip():
+                    clean[k] = val.strip().lower()
+                else:
+                    clean[k] = None
+
+        return clean
+
+    def to_vector_entry(
+        self,
+        text: str,
+        vector: List[float],
+        metadata_raw: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Bangun 1 vector entry LanceDB dengan metadata yang benar dan tidak kosong seluruhnya.
+        """
+
+        # Konversi ke LanceModel → lalu ke dict
+        meta_obj = ChunkMetadata(**self._sanitize(metadata_raw))
+
+        return {
+            "text": text,
+            "vector": list(vector),
+            "metadata": meta_obj.model_dump(),  # HARUS dict, bukan LanceModel
+        }
+
+    async def safe_add(
+        self, chunks: List[Dict[str, Any]], context_name: str = "unknown"
+    ) -> bool:
+        """
+        Tambahkan chunks ke vectorstore dengan validasi jumlah sebelum & sesudah.
 
         Args:
-            dl_doc: Objek dokumen dari DocumentConverter.
-            filename (str): Nama file sumber.
-            project (str): Nama proyek untuk metadata.
-            tahun (str): Tahun untuk metadata.
+            chunks: List[Dict] dengan field text, vector, metadata
+            context_name: Nama konteks (filename/proyek) untuk log
 
         Returns:
-            List[Dict[str, Any]]: Daftar entri dengan keys `text`, `vector`, dan `metadata`.
+            bool: True jika berhasil, False jika gagal
+        """
+        try:
+            before = await self.table.count_rows()
+            await self.table.add(chunks)
+            after = await self.table.count_rows()
+            added = after - before
+
+            if added != len(chunks):
+                logger.warning(
+                    f"Jumlah chunk ditambahkan tidak sesuai: "
+                    f"expected={len(chunks)}, actual={added}"
+                )
+            else:
+                logger.info(
+                    f"{added} chunk berhasil ditambahkan untuk '{context_name}'."
+                )
+
+            return added > 0
+
+        except Exception as e:
+            logger.error(f"Gagal menambahkan chunks untuk '{context_name}': {e}")
+            return False
+
+    async def _chunk_document_meta_kak(
+        self, dl_doc, filename: str, project: str, pelanggan: str, tahun: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Chunk dokumen KAK/TOR, hitung embedding setiap chunk, dan siapkan metadata.
         """
         chunker = HybridChunker(merge_peers=True)
         chunks = chunker.chunk(dl_doc=dl_doc)
+
         entries = []
         for idx, chunk in enumerate(chunks):
             text = chunk.text
-            vec = self.embed.embed_query(text)
+            vec = await self.embed.aembed_query(text)
             self._validate_vector_dim(vec)
+
+            # Build metadata sebagai LanceModel
+            raw_meta = {
+                "filename": filename,
+                "source": filename,
+                "chunk_index": idx,
+                "pelanggan": pelanggan,
+                "project": project,
+                "tahun": tahun,
+            }
+
             entries.append(
-                {
-                    "text": text,
-                    "vector": list(vec),
-                    "metadata": {
-                        "filename": filename,
-                        "source": filename,
-                        "chunk_index": idx,
-                        "project": project,
-                        "tahun": tahun,
-                    },
-                }
+                self.to_vector_entry(
+                    text=chunk.text,
+                    vector=vec,
+                    metadata_raw=raw_meta,
+                )
             )
+
         return entries
 
-    # —————————————————————————————————————————
-    #  Ingest semua PDF di folder
-    # —————————————————————————————————————————
-
-    def setup_vector_store(
-        self,
-        force_recreate: bool = False,
-        project: str = "default",
-        tahun: str = "2025",
-    ):
+    async def _chunk_document_meta_prod(
+        self, dl_doc, filename: str, product: str, category: str, tahun: str
+    ) -> List[Dict[str, Any]]:
         """
-        Menyiapkan dan mengindeks semua file PDF dalam folder knowledge_base_path.
-
-        Args:
-            force_recreate (bool): Jika True, reset terlebih dahulu vectorstore.
-            project (str): Label proyek untuk metadata setiap chunk.
-            tahun (str): Label tahun untuk metadata setiap chunk.
+        Chunk dokumen product, hitung embedding setiap chunk, dan siapkan metadata.
         """
-        if force_recreate:
-            logger.info("Rebuild vectorstore diminta.")
-            self.reset_vectorstore()
+        chunker = HybridChunker(merge_peers=True)
+        chunks = chunker.chunk(dl_doc=dl_doc)
 
-        pdf_files = list(self.base_path.rglob("*.pdf"))
-        if not pdf_files:
-            logger.warning("Tidak ada PDF di knowledge_base_path.")
-            return
+        entries = []
+        for idx, chunk in enumerate(chunks):
+            text = chunk.text
+            vec = await self.embed.aembed_query(text)
+            self._validate_vector_dim(vec)
 
-        to_add = []
-        for path in pdf_files:
-            filename = path.name
-            # skip jika sudah ada
-            exists = (
-                self.table.count_rows(filter=f"metadata.filename = '{filename}'") > 0
-            )
-            if exists:
-                logger.debug(f"Skip '{filename}', sudah terindeks.")
-                continue
+            # Build metadata sebagai LanceModel
+            raw_meta = {
+                "filename": filename,
+                "source": filename,
+                "chunk_index": idx,
+                "product": product,
+                "category": category,
+                "tahun": tahun,
+            }
 
-            try:
-                result = DocumentConverter().convert(source=str(path))
-                to_add.extend(
-                    self._chunk_document(result.document, filename, project, tahun)
+            entries.append(
+                self.to_vector_entry(
+                    text=chunk.text,
+                    vector=vec,
+                    metadata_raw=raw_meta,
                 )
-                logger.info(f"'{filename}' dipecah dan siap diindeks.")
-            except Exception as e:
-                logger.warning(f"Gagal proses '{filename}': {e}")
+            )
 
-        if to_add:
-            self.table.add(to_add)
-            logger.info(f"{len(to_add)} chunk ditambahkan ke vectorstore.")
-        else:
-            logger.info("Tidak ada chunk baru untuk diindeks.")
+        return entries
 
-    # —————————————————————————————————————————
-    #  Ingest file MD ringkasan
-    # —————————————————————————————————————————
-
-    def ingest_markdown(
-        self, markdown_path: str, project: str = "default", tahun: str = "2025"
-    ) -> Dict[str, Any]:
-        """
-        Mengonversi dan mengindeks konten dari file Markdown ke dalam vectorstore.
-
-        Args:
-            markdown_path (str): Path ke file .md yang akan di-ingest.
-            project (str): Label proyek untuk metadata.
-            tahun (str): Label tahun untuk metadata.
-
-        Returns:
-            Dict[str, Any]: Pesan sukses atau error dalam bentuk dict.
-        """
-        path = Path(markdown_path)
-        if not path.exists():
-            msg = f"File tidak ditemukan: {markdown_path}"
-            logger.warning(msg)
-            return {"error": msg}
-
-        try:
-            result = DocumentConverter().convert(source=path)
-            entries = self._chunk_document(result.document, path.name, project, tahun)
-            self.table.add(entries)
-            msg = f"{len(entries)} chunk dari '{path.name}' diindeks."
-            logger.info(msg)
-            return {"message": msg}
-        except Exception as e:
-            logger.exception("Gagal ingest markdown.")
-            return {"error": str(e)}
-
-    # —————————————————————————————————————————
-    #  Reset vectorstore
-    # —————————————————————————————————————————
-
-    def reset_vectorstore(self):
-        """
-        Mereset vectorstore dengan cara menghapus dan membuat ulang tabel LanceDB
-        sesuai schema chunk yang telah ditentukan.
-        """
-        self.db.drop_table(self.collection_name)
-        Chunks = build_chunks_schema(self.vector_dim)
-        self.table = self.db.create_table(
-            self.collection_name, schema=Chunks, mode="create"
-        )
-        logger.info("Vectorstore di-reset dan tabel baru dibuat.")
-
-    # —————————————————————————————————————————
-    #  Retrieval
-    # —————————————————————————————————————————
-
-    def retrieval(
+    async def retrieval(
         self,
         query: str,
         k: Optional[int] = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
-    ) -> str:
+    ) -> List[Dict[str, Any]]:
         """
-        Melakukan similarity search dan filter metadata pada vectorstore.
+        Melakukan retrieval dokumen relevan berdasarkan query dan filter metadata.
+        Mengembalikan hasil dalam bentuk list of dict {text, metadata, citation}
 
         Args:
-            query (str): Teks pertanyaan atau query.
-            k (Optional[int]): Jumlah hasil teratas yang diinginkan.
-            metadata_filter (Optional[Dict[str, Any]]): Filter metadata sebagai dict,
-                misal {"project": "Alpha", "tahun": "2025"} atau nilai list untuk IN-clause.
+            query: pertanyaan user.
+            k: jumlah top-k yang ingin diambil.
+            metadata_filter: dictionary untuk memfilter metadata (project, tahun, dst).
 
         Returns:
-            str: Gabungan teks chunk hasil pencarian beserta sumbernya, atau string kosong jika tidak ada hasil.
+            List[Dict]: hasil retrieval
         """
-        settings = Settings()  # type: ignore
-        top_k = k or settings.retriever_search_k
+        try:
+            if not query or not query.strip():
+                logger.warning("Query kosong.")
+                return [{"error": "Query kosong. Masukkan pertanyaan yang jelas."}]
 
-        # 1. embed query
-        q_vec = self.embed.embed_query(query)
-        self._validate_vector_dim(q_vec)
+            top_k = k or self.settings.retriever_search_k
 
-        # 2. mulai build pencarian
-        builder = self.table.search(list(q_vec))
+            start = time.perf_counter()  # Start timing
+            q_vec = await self.embed.aembed_query(query)
+            self._validate_vector_dim(q_vec)
 
-        # 3. kalau ada metadata_filter, rakit string .where(...)
-        if metadata_filter:
-            clauses: List[str] = []
-            for field, val in metadata_filter.items():
-                key = f"metadata.{field}"
-                # kalau list/tuple → IN‐clause
-                if isinstance(val, (list, tuple)):
-                    items = ", ".join(f"'{v}'" for v in val)
-                    clauses.append(f"{key} IN ({items})")
-                else:
-                    # asumsi string atau number
-                    if isinstance(val, str):
-                        clauses.append(f"{key} = '{val}'")
+            builder = await self.table.search(list(q_vec))
+
+            # ─ Filter metadata jika diberikan ─
+            ALLOWED_FIELDS = {
+                "filename",
+                "source",
+                "chunk_index",
+                "pelanggan",
+                "category",
+                "product",
+                "tahun",
+                "project",
+            }
+
+            # Validasi filter metadata
+            if metadata_filter:
+                if not isinstance(metadata_filter, dict):
+                    return [{"error": "Metadata filter harus dictionary."}]
+                clauses = []
+                for field, val in metadata_filter.items():
+                    if field not in ALLOWED_FIELDS:
+                        logger.warning(f"Metadata field tidak valid: {field}")
+                        continue
+                    key = f"metadata.{field}"
+                    if val is None:
+                        continue
+                    elif isinstance(val, (list, tuple)):
+                        items = ", ".join(f"'{v}'" for v in val)
+                        clauses.append(f"{key} IN ({items})")
                     else:
-                        clauses.append(f"{key} = {val}")
-            filter_expr = " AND ".join(clauses)
-            builder = builder.where(filter_expr)
+                        val_str = str(val).strip()
+                        if val_str:
+                            clauses.append(f"{key} = '{val_str}'")
+                if clauses:
+                    builder = builder.where(" AND ".join(clauses))
+                    logger.info(f"Filter metadata diterapkan: {' AND '.join(clauses)}")
+                else:
+                    logger.warning("Filter metadata kosong atau tidak valid, dilewati.")
 
-        # 4. limit dan ambil pandas DataFrame
-        df = builder.limit(top_k).to_pandas()
+            # ─ Ambil hasil ─
+            df = await builder.limit(top_k).to_pandas()
+            if df.empty:
+                total = await self.table.count_rows()
+                logger.info(
+                    f"Tidak ditemukan hasil untuk '{query}'. Total chunk: {total}"
+                )
+                return []
 
-        if df.empty:
+            query_time = time.perf_counter() - start  # Selesai timing
+
+            results = []
+            for _, row in df.iterrows():
+                meta = row.get("metadata")
+                if not meta:
+                    logger.warning("Chunk dengan metadata NULL/kosong dilewati.")
+                    continue
+
+                citation = (
+                    f"[{meta.get('filename', '')} - {meta.get('pelanggan', '')} - "
+                    f"{meta.get('category', '')} - {meta.get('project', '')} - "
+                    f"{meta.get('product', '')} - {meta.get('tahun', '')}]"
+                )
+
+                results.append(
+                    {
+                        "text": row["text"],
+                        "metadata": meta,
+                        "citation": citation,
+                        "score": float(
+                            row.get("score", 0.0)
+                        ),  # LanceDB menyediakan score
+                        "query_time": query_time,  # Waktu query
+                    }
+                )
+
             logger.info(
-                f"Tidak ada hasil untuk '{query}' dengan filter {metadata_filter}."
+                f"Ditemukan {len(results)} hasil retrieval untuk query: '{query}' "
+                f"(waktu: {query_time:.2f}s)"
             )
-            return ""
+            for i, r in enumerate(results[:k]):  # Log top-k results
+                logger.debug(f"[{i + 1}] Score={r['score']:.4f} | {r['citation']}")
 
-        # 5. format jawaban dengan citation metadata
-        contexts = []
-        for _, row in df.iterrows():
-            meta = row["metadata"] or {}
-            citation = (
-                f"[{meta.get('filename', '')}"
-                f" - {meta.get('project', '')}"
-                f" - {meta.get('tahun', '')}]"
-            )
-            contexts.append(f"{row['text']}\n\nSumber: {citation}")
+            return results
 
-        logger.info(
-            f"{len(contexts)} hasil retrieval untuk '{query}' dengan filter {metadata_filter}."
-        )
-        return "\n\n".join(contexts)
+        except Exception as e:
+            logger.error(f"Retrieval error: {e}")
+            return [{"error": f"Retrieval gagal: {str(e)}"}]
+
+    async def reset_vector_database(self) -> Dict[str, Any]:
+        """
+        Reset ulang LanceDB vectorstore, menghapus data dan reinitialize ulang koneksi DB dan tabel.
+        """
+        try:
+            vector_path = Path(self.settings.vector_store_path)
+
+            # 1. Hapus folder vector store
+            if vector_path.exists() and vector_path.is_dir():
+                shutil.rmtree(vector_path)
+                logger.info(f"Direktori vector store '{vector_path}' telah dihapus.")
+            else:
+                logger.warning(f"Direktori tidak ditemukan: {vector_path}")
+
+            # 2. Hapus file manifest dan status
+            manifest_file = Path("mcp_server/data/ingested_manifest.json")
+            status_file = Path("mcp_server/data/ingestion_status.json")
+            for f in [manifest_file, status_file]:
+                if f.exists():
+                    f.unlink()
+                    logger.info(f"File '{f}' telah dihapus.")
+
+            # 3. Inisialisasi ulang koneksi LanceDB
+            logger.info("Menginisialisasi ulang koneksi LanceDB...")
+            await self.db_connect()
+
+            # 4. Validasi koneksi baru
+            try:
+                row_count = await self.table.count_rows()
+                logger.info(
+                    f"Vectorstore berhasil di-reset dan siap. Baris: {row_count}"
+                )
+            except Exception as inner_e:
+                logger.warning(
+                    f"Tabel berhasil dibuat tapi count_rows gagal: {inner_e}"
+                )
+
+            return {
+                "status": "success",
+                "message": "Vector DB berhasil di-reset dan diinisialisasi ulang.",
+            }
+
+        except Exception as e:
+            logger.error(f"Reset vector database gagal: {e}")
+            return {"status": "error", "message": str(e)}
+
+    async def list_available_metadata(self) -> List[Dict[str, Any]]:
+        """List metadata entries from the vectorstore.
+
+        Returns:
+            List[Dict[str, Any]]: List of metadata dictionaries.
+        """
+        try:
+            builder = await self.table.search([0.0] * self.vector_dim)
+            builder = builder.where("metadata IS NOT NULL")
+            df = await builder.limit(5000).to_pandas()
+            result = [row["metadata"] for _, row in df.iterrows()]
+            return result
+        except Exception as e:
+            logger.error(f"Gagal mengambil metadata dari vectorstore: {e}")
+            return []

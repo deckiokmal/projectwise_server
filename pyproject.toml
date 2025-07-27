@@ -18,4 +18,5 @@ dependencies = [
     "openai>=1.93.0",
     "pyarrow>=14.0.0",
     "pydantic>=2.11.7",
+    "tavily-python>=0.7.10",
 ]

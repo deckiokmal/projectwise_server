@@ -1505,6 +1505,7 @@ dependencies = [
     { name = "openai" },
     { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "tavily-python" },
 ]
 
 [package.metadata]
@@ -1522,6 +1523,7 @@ requires-dist = [
     { name = "openai", specifier = ">=1.93.0" },
     { name = "pyarrow", specifier = ">=14.0.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "tavily-python", specifier = ">=0.7.10" },
 ]
 
 [[package]]
@@ -2207,6 +2209,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ec/fe/802052aecb21e3797b8f7902564ab6ea0d60ff8ca23952079064155d1ae1/tabulate-0.9.0.tar.gz", hash = "sha256:0095b12bf5966de529c0feb1fa08671671b3368eec77d7ef7ab114be2c068b3c", size = 81090, upload-time = "2022-10-06T17:21:48.54Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/40/44/4a5f08c96eb108af5cb50b41f76142f0afa346dfa99d5296fe7202a11854/tabulate-0.9.0-py3-none-any.whl", hash = "sha256:024ca478df22e9340661486f85298cff5f6dcdba14f3813e8830015b9ed1948f", size = 35252, upload-time = "2022-10-06T17:21:44.262Z" },
+]
+
+[[package]]
+name = "tavily-python"
+version = "0.7.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "requests" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/0e/d4aa0f4dec298298b510ee5209f5ff29352bbbba106fd7ea0221ba8840dc/tavily_python-0.7.10.tar.gz", hash = "sha256:c87b4c0549ab2e416cf4ac3da8fe3ce5db106288408b06e197d4b5ba8ec7ead9", size = 19275, upload-time = "2025-07-17T23:57:01.239Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/60/4c4678a28b3b5061aa2ab45b215290d3a71810e7996bafdf6b7313e75fb3/tavily_python-0.7.10-py3-none-any.whl", hash = "sha256:a99958e14dd091271611be7fb1e1a8a86f5bff3a9022b9626f4c4f1513338088", size = 15786, upload-time = "2025-07-17T23:56:58.404Z" },
 ]
 
 [[package]]

@@ -1,8 +1,8 @@
 from __future__ import annotations
 import re
 import unicodedata
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 from mcp_server.utils.logger import logger
 
 
@@ -11,20 +11,21 @@ from mcp_server.utils.logger import logger
 # ---------------------------------------------------------------------------
 
 
-def _slugify(text: str) -> str:
+def slugify(text: str) -> str:
+    """Ubah text menjadi slug yang aman untuk nama folder.
+
+    Args:
+        text (str): text yang akan diubah menjadi slug.
+
+    Returns:
+        str: slug aman. contoh: "Nama Folder" -> "nama_folder"
     """
-    Ubah text menjadi slug a-z0-9 dengan underscore.
-    Contoh: "Proyek Core TTD" → "proyek_core_ttd"
-    """
-    # Normalisasi Unicode → ASCII
     slug = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
-    # Ganti semua karakter selain a-z0-9 menjadi underscore
-    slug = re.sub(r"[^a-z0-9]+", "_", slug.lower()).strip("_")
-    return slug or "summary"
+    return re.sub(r"[^a-z0-9]+", "_", slug.lower()).strip("_")
 
 
 # Helper save_summary_markdown_tool
-def _to_markdown(content: str) -> str:
+def to_markdown(content: str) -> str:
     """Bungkus JSON ke blok code Markdown."""
     return f"## Ringkasan Tender\n\n```json\n{content}\n```\n"
 
@@ -33,7 +34,7 @@ def _to_markdown(content: str) -> str:
 _MD_RE = re.compile(r"\.md$", re.I)
 
 
-def _normalize_md_name(name: Optional[str]) -> Optional[str]:
+def normalize_md_name(name: Optional[str]) -> Optional[str]:
     """
     • Hilangkan ekstensi .md (huruf besar/kecil)
     • Trim spasi di kiri-kanan
@@ -44,7 +45,7 @@ def _normalize_md_name(name: Optional[str]) -> Optional[str]:
     return _MD_RE.sub("", name.strip())
 
 
-def _list_files(base_path: str) -> list[str]:
+def list_files(base_path: str) -> list[str]:
     """
     Tampilkan seluruh list nama files di direktori `base_path`
     dengan ekstensi .md dan .pdf, terurut secara alfabet.

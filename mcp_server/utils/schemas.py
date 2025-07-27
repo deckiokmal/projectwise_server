@@ -1,21 +1,25 @@
-from typing import Any, Optional, Dict, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from lancedb.pydantic import LanceModel
+from typing import Optional
 
-class ToolStatus(str):
-    SUCCESS = "success"
-    FAILURE = "failure"
-    EMPTY   = "empty"   # ← khusus hasil kosong
 
-class BaseToolResponse(BaseModel):
-    status: ToolStatus = Field(..., description="success | failure | empty")
-    error: Optional[str] = None   # wajib None kalau status ≠ failure
+# ──────────────────────────────────────────────────────────────
+# Skema untuk menyimpan metadata tiap chunk dokumen
+# ──────────────────────────────────────────────────────────────
+class ChunkMetadata(LanceModel):
+    filename: str
+    source: str
+    chunk_index: int
+    pelanggan: Optional[str]
+    category: Optional[str]
+    product: Optional[str]
+    tahun: Optional[str]
+    project: Optional[str]
 
-class RAGResult(BaseModel):
-    passages: List[str] = []
-    citations: List[str] = []
 
-class RetrievalResponse(BaseToolResponse):
-    data: Optional[RAGResult] = None   # None jika status != success
+class RagQuery(BaseModel):
+    question: str
 
-class GenericDataResponse(BaseToolResponse):
-    data: Optional[Dict[str, Any]] = None
+
+class RagResponse(BaseModel):
+    answer: str
