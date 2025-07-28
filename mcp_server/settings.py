@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     openai_api_key: str = os.getenv("OPENAI_API_KEY")  # type: ignore
     embedding_model: str = "text-embedding-3-small"
-    llm_model: str = "gpt-4.1-mini"
+    llm_model: str = "gpt-4.1"
     llm_temperature: float = 0.0
+    max_token: int = 16000  # 100.000 token untuk ringkasan
 
     # Direktori penyimpanan dan dokumen
     kak_tor_base_path: str = "mcp_server/data/kak_tor"
@@ -29,6 +30,9 @@ class Settings(BaseSettings):
     templates_base_path: str = "mcp_server/data/templates/prompts"
     summaries_instruction_path: str = (
         "mcp_server/data/templates/prompts/kak_analyzer.txt"
+    )
+    product_summaries_instruction_path: str = (
+        "mcp_server/data/templates/prompts/product_sizing_summaries.txt"
     )
     proposal_template_path: str = (
         "mcp_server/data/templates/proposals/proposal_template.docx"

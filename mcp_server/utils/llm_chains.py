@@ -54,7 +54,7 @@ class LLMChain:
         except Exception as e:
             logger.error(f"LLMChain generate_text error: {e}")
             traceback.print_exc()
-            return "[Gagal memanggil LLMChain]"
+            return "Gagal memanggil LLMChain"
 
     async def generate_with_prompt_template(
         self,
