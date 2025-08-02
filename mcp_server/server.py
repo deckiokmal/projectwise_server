@@ -37,6 +37,19 @@ doc_tools = DocGeneratorTools()
 
 
 # ──────────────────────────────────────────────────────────────
+# Heartbeat message tool
+# ──────────────────────────────────────────────────────────────
+@mcp.tool(
+    name="heartbeat",
+    title="Heartbeat message",
+    description="Heartbeat message digunakan oleh client untuk keep alive koneksi",
+    structured_output=False,
+)
+def heartbeat_tool() -> str:
+    return "ok"
+
+
+# ──────────────────────────────────────────────────────────────
 # Utility untuk listing files dalam KAK/TOR dan Product dir
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
@@ -329,4 +342,4 @@ def websearch_tool(query: str) -> List[Dict]:
 # Run FastMCP server
 # ──────────────────────────────────────────────────────────────
 # if __name__ == "__main__":
-#     mcp.run(transport="streamable-http")
+#     mcp.run(transport="sse")
