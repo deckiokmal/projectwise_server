@@ -336,7 +336,8 @@ class RAGPipeline:
                     else:
                         val_str = str(val).strip()
                         if val_str:
-                            clauses.append(f"{key} = '{val_str}'")
+                            # Tambahkan key: value dan pastikan val selalu huruf kecil.
+                            clauses.append(f"{key} = '{val_str.lower()}'")
                 if clauses:
                     builder = builder.where(" AND ".join(clauses))
                     logger.info(f"Filter metadata diterapkan: {' AND '.join(clauses)}")
@@ -350,7 +351,17 @@ class RAGPipeline:
                 logger.info(
                     f"Tidak ditemukan hasil untuk '{query}'. Total chunk: {total}"
                 )
-                return []
+                return [{"status": "no_results", "total_chunk": total}]
+
+            # Jika hasil tidak ditemukan dengan filter metadata, kembalikan list metadata yang tersedia.
+            if metadata_filter and df.empty:
+                result = await self.list_available_metadata(limit=top_k)
+                return [
+                    {
+                        "result": f"Tidak ditemukan hasil untuk '{query}'",
+                        "available_metadata": result,
+                    }
+                ]
 
             query_time = time.perf_counter() - start  # Selesai timing
 
@@ -438,7 +449,7 @@ class RAGPipeline:
             logger.error(f"Reset vector database gagal: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def list_available_metadata(self) -> List[Dict[str, Any]]:
+    async def list_available_metadata(self, limit: int = 20) -> List[Dict[str, Any]]:
         """List metadata entries from the vectorstore.
 
         Returns:
@@ -447,7 +458,7 @@ class RAGPipeline:
         try:
             builder = await self.table.search([0.0] * self.vector_dim)
             builder = builder.where("metadata IS NOT NULL")
-            df = await builder.limit(5000).to_pandas()
+            df = await builder.limit(limit).to_pandas()
             result = [row["metadata"] for _, row in df.iterrows()]
             return result
         except Exception as e:

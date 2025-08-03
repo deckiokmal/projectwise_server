@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from mcp.server.fastmcp import FastMCP  # type: ignore
+from mcp.server.fastmcp import FastMCP
 from tavily import TavilyClient
 import os
 
@@ -43,7 +43,7 @@ doc_tools = DocGeneratorTools()
     name="heartbeat",
     title="Heartbeat message",
     description="Heartbeat message digunakan oleh client untuk keep alive koneksi",
-    structured_output=False,
+    structured_output=True,
 )
 def heartbeat_tool() -> str:
     return "ok"
@@ -150,21 +150,26 @@ async def summarize_kak_with_llm_tool(
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
     name="rag_retrieval",
-    title="RAG Retrieval (JSON Output)",
+    title="RAG Retrieval",
     description=(
-        "Cari teks relevan dari vectorstore berdasarkan query dan filter metadata "
-        "(seperti `project`, `pelanggan`, `tahun`, dll). Hasil dikembalikan sebagai array JSON "
-        "yang berisi text, metadata, dan citation."
+        "1️. Metadata optional: Periksa apakah query pengguna menyertakan filter metadata "
+        "(project, pelanggan, tahun). Jika tidak ada, lanjutkan retrieval tanpa filter.  \n"
+        "2️. Jika metadata disertakan, pastikan nilainya spesifik (salah satu dari opsi yang tersedia).  \n"
+        "3️. Panggil retrieval dengan (query, k, metadata_filter).  \n"
+        "4️. Jika hasil kosong, backend akan mengembalikan daftar metadata yang valid.  \n"
+        "   – Setelah menerima daftar ini, LLM harus memilih nilai yang benar dan memanggil "
+        "`rag_retrieval` ulang dengan filter yang diperbaiki.  \n"
+        "5️. Kembalikan array JSON berisi objek `{ text, metadata, citation, score, query_time }`."
     ),
     structured_output=True,
 )
 async def rag_retrieval_tool(
     query: str,
-    k: Optional[int] = None,
+    k: Optional[int] = 10,
     metadata_filter: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    MCP Tool untuk JSON retrieval (context-style).
+    MCP Tool untuk retrieval konteks (RAG). Metadata bersifat optional namun harus valid jika diberikan.
     """
     result = await rag_tools.pipeline.retrieval(
         query=query,
@@ -180,8 +185,8 @@ async def rag_retrieval_tool(
     description="Menampilkan seluruh metadata dokumen (project, pelanggan, tahun, dll) yang telah masuk ke vectorstore.",
     structured_output=True,
 )
-async def list_metadata_entries_tool() -> List[Dict[str, Any]]:
-    return await rag_tools.pipeline.list_available_metadata()
+async def list_metadata_entries_tool(limit: int = 20) -> List[Dict[str, Any]]:
+    return await rag_tools.pipeline.list_available_metadata(limit)
 
 
 @mcp.tool(
@@ -336,6 +341,11 @@ def websearch_tool(query: str) -> List[Dict]:
         return response["results"]
     except Exception as e:
         return [{"error": f"Error: {str(e)}"}]
+
+
+# ──────────────────────────────────────────────────────────────
+# Elicitation capabilities tools
+# ──────────────────────────────────────────────────────────────
 
 
 # ──────────────────────────────────────────────────────────────
