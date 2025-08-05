@@ -1,3 +1,26 @@
+## **Arsitektur / Topologi**
+```mermaid
+graph TD
+  %% Definisi node
+  Server["MCP Server"]
+  Client["MCP Client"]
+  QdrantDB["Qdrant (mem0 vector DB)"]
+  OpenAI["OpenAI API (LLM & Embedding)"]
+
+  %% Koneksi utama
+  Server -- "Streamable HTTP Transport" --> Client
+  Client -- "Streamable HTTP Transport" --> Server
+
+  %% Integrasi database vector
+  Client -->|gRPC/HTTP| QdrantDB
+
+  %% Integrasi LLM & Embedding
+  Server -- "HTTPS API Calls" --> OpenAI
+  Client -- "HTTPS API Calls" --> OpenAI
+```
+
+## Docker Build
+
 Berikut **Dockerfile satu-stage** yang menggunakan uv sebagai package manager, meng­install dependensi dari pyproject.toml:
 
 ```dockerfile
@@ -138,3 +161,32 @@ Dengan ini image Anda akan berisi:
 ---
 ## Troubleshoot
 1. Pastikan jika menjalan client dan server di docker host yang sama, gunakan URL server: host.docker.internal:5000/
+
+
+## Docker Compose
+
+```docker-compose
+services:
+  # -------------------------------
+  # Aplikasi Projectwise MCP Server
+  # -------------------------------
+  app:
+    image: deckiokmal/projectwise_mcpserver:latest
+    container_name: projectwiseserver_app
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount volume agar database (lancedb) tetap tersimpan di luar container
+      - projectwise-db:/projectwise_mcpserver/lancedb_storage
+    environment:
+      # Sesuaikan key & URL di file .env Anda
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Tambahkan environment variables lain di sini…
+    restart: unless-stopped
+
+volumes:
+  # Volume untuk menyimpan file database aplikasi (Lancedb)
+  projectwise-db:
+
+```

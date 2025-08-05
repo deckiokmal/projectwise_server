@@ -1,0 +1,22 @@
+services:
+  # -------------------------------
+  # Aplikasi Projectwise MCP Server
+  # -------------------------------
+  app:
+    image: deckiokmal/projectwise_mcpserver:latest
+    container_name: projectwiseserver_app
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount volume agar database (lancedb) tetap tersimpan di luar container
+      - projectwise-db:/projectwise_mcpserver/lancedb_storage
+    environment:
+      # Sesuaikan key & URL di file .env Anda
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Tambahkan environment variables lain di sini…
+    restart: unless-stopped
+
+volumes:
+  # Volume untuk menyimpan file database aplikasi (Lancedb)
+  projectwise-db:
