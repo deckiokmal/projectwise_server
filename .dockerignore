@@ -1,0 +1,10 @@
+# Ignore file .env di dalam folder
+.env
+
+# (Opsional) Ignore semua file env di subfolder manapun
+**/*.env
+
+.venv/
+docs/
+lancedb_storage/
+logs/
