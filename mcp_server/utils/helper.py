@@ -43,7 +43,7 @@ def normalize_md_name(name: Optional[str]) -> Optional[str]:
 # ============================================================
 def to_kak_markdown(content: str) -> str:
     """Bungkus JSON ke blok code Markdown."""
-    return f"## Ringkasan Tender\n\n```json\n{content}\n```\n"
+    return f"## Ringkasan Tender\n\n{content}"
 
 
 def to_product_markdown(content: str) -> str:

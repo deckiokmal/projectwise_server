@@ -165,7 +165,7 @@ Dengan ini image Anda akan berisi:
 
 ## Docker Compose
 
-```docker-compose
+```yaml
 services:
   # -------------------------------
   # Aplikasi Projectwise MCP Server
@@ -189,4 +189,9 @@ volumes:
   # Volume untuk menyimpan file database aplikasi (Lancedb)
   projectwise-db:
 
+```
+
+jalankan docker compose:
+```bash
+docker-compose up -d
 ```

@@ -2,14 +2,16 @@ services:
   # -------------------------------
   # Aplikasi Projectwise MCP Server
   # -------------------------------
-  app:
+  app_server:
     image: deckiokmal/projectwise_mcpserver:latest
     container_name: projectwiseserver_app
+    networks:
+      - projectwise-net
     ports:
       - "5000:5000"
     volumes:
       # Mount volume agar database (lancedb) tetap tersimpan di luar container
-      - projectwise-db:/projectwise_mcpserver/lancedb_storage
+      - projectwiseserver-db:/projectwise_mcpserver/lancedb_storage
     environment:
       # Sesuaikan key & URL di file .env Anda
       - TAVILY_API_KEY=${TAVILY_API_KEY}
@@ -17,6 +19,56 @@ services:
       # Tambahkan environment variables lain di sini…
     restart: unless-stopped
 
+  # -------------------------------
+  # Qdrant Vector Database
+  # -------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    networks:
+      - projectwise-net
+    ports:
+      - "6333:6333"
+    restart: unless-stopped
+    volumes:
+      - qdrant-storage:/qdrant/storage
+
+  # -------------------------------
+  # Aplikasi Projectwise MCP Client
+  # -------------------------------
+  app_client:
+    image: deckiokmal/projectwise_mcpclient:latest
+    container_name: projectwiseclient_app
+    networks:
+      - projectwise-net
+    depends_on:
+      - qdrant
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount volume agar database (sqlite) tetap tersimpan di luar container
+      - projectwiseclient-db:/projectwise_mcpclient/chat_memory.sqlite
+    environment:
+      # Sesuaikan key & URL di file .env Anda
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE}
+      - EMBED_MODEL=${EMBED_MODEL}
+      - MEM0_VECTOR_HOST=${MEM0_VECTOR_HOST}
+      - MEM0_VECTOR_PORT=${MEM0_VECTOR_PORT}
+      - MCP_SERVER_API=${MCP_SERVER_API}
+      # Tambahkan environment variables lain di sini…
+    restart: unless-stopped
+
+networks:
+  projectwise-net:
+    driver: bridge
+
 volumes:
   # Volume untuk menyimpan file database aplikasi (Lancedb)
-  projectwise-db:
+  projectwiseserver-db:
+  # Volume untuk menyimpan file database aplikasi (misal SQLite)
+  projectwiseclient-db:
+  # Volume untuk menyimpan data Qdrant
+  qdrant-storage:
