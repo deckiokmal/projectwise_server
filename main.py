@@ -1,9 +1,11 @@
+import asyncio
 import contextlib
 from fastapi import FastAPI
 from mcp_server.server import mcp as projectwise_mcp
 from mcp_server.api.app_kak_pipeline import router as kak_router
 from mcp_server.api.app_product_pipeline import router as product_router
 from mcp_server.api.check_status_ingestion import router as status_router
+import uvicorn
 
 
 # Buat kombinasi lifespan untuk manage session managers mcp
@@ -25,15 +27,22 @@ app.include_router(status_router, prefix="/api")
 # Inisialisasi MCP Server
 app.mount("/projectwise", projectwise_mcp.streamable_http_app())
 
+
+async def main():
+    """Main async entrypoint untuk menjalankan Uvicorn."""
+    config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 if __name__ == "__main__":
-    import uvicorn
+    # Jalankan server dalam event loop async
+    asyncio.run(main())
 
-    uvicorn.run(app, host="0.0.0.0", port=5000)
-
-    # run the FastMCP server
     """
-    uv run main.py -> to run the FastMCP server
-    npx @modelcontextprotocol/inspector -> for debugging MCP server
+    Cara menjalankan:
+    uv run main.py -> untuk menjalankan FastMCP server
+    npx @modelcontextprotocol/inspector -> debugging MCP server
     
-    mcp URI for client : http://localhost:5000/projectwise/mcp
+    MCP URI untuk client: http://localhost:5000/projectwise/mcp/
     """
