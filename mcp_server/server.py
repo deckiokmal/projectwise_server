@@ -41,8 +41,9 @@ doc_tools = DocGeneratorTools()
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
     name="heartbeat",
-    title="Heartbeat message",
-    description="Heartbeat message digunakan oleh client untuk keep alive koneksi",
+    title="Keep MCP Connection Alive",
+    description="Client uses this tool to keep the MCP server connection alive. "
+    "No arguments needed. Returns 'ok' if server is alive.",
     structured_output=True,
 )
 def heartbeat_tool() -> str:
@@ -53,9 +54,14 @@ def heartbeat_tool() -> str:
 # Utility untuk listing files dalam KAK/TOR dan Product dir
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="list_kak_files",
-    title="Daftar File KAK/TOR",
-    description="Menampilkan semua file KAK/TOR yang tersedia berdasarkan folder metadata pelanggan/tahun.",
+    name="list_kak_tor_files",
+    title="List KAK/TOR PDF Files for Project Context",
+    description=(
+        "Use this tool when you need to find available KAK/TOR Project PDF files before adding them to the knowledge base. "
+        "Returns relative file paths from the KAK/TOR base folder. "
+        "Typical usage: Step 1 before calling 'add_kak_tor_knowledge'. "
+        "Example output: { 'files': ['CustomerA/2025/ProjectX.pdf'] }"
+    ),
     structured_output=True,
 )
 def list_kak_files_tool() -> Dict[str, Any]:
@@ -65,9 +71,14 @@ def list_kak_files_tool() -> Dict[str, Any]:
 
 
 @mcp.tool(
-    name="list_product_files",
-    title="Daftar File Produk",
-    description="Menampilkan semua file produk PDF yang tersedia berdasarkan folder metadata kategori/tahun/produk.",
+    name="list_product_files_for_proposal",
+    title="List Product PDF Files for Proposal Preparation",
+    description=(
+        "Use this tool to see available standard product-related PDF files in the knowledge base folder "
+        "before adding product knowledge. "
+        "Typical usage: Step 1 before calling 'add_product_knowledge'. "
+        "Example output: { 'files': ['Internet/2025/Dedicated_100Mbps.pdf'] }"
+    ),
     structured_output=True,
 )
 def list_product_files_tool() -> Dict[str, Any]:
@@ -81,10 +92,13 @@ def list_product_files_tool() -> Dict[str, Any]:
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
     name="add_product_knowledge",
-    title="Ingest Produk ke Knowledge Base",
+    title="Add Product PDF to Proposal Knowledge Base",
     description=(
-        "Tambahkan PDF produk ke knowledge base untuk kebutuhan proposal. "
-        "Simpan markdown hasilnya dan ringkasan Sizing dengan metadata `product`, `category`, `tahun`."
+        "Use this tool to ingest a product PDF into the proposal knowledge base only if user explisit ask for it. "
+        "Requires: category, product_name, year, filename (from list_product_files_for_proposal). "
+        "Example: category='Internet Services', product_name='Internet_Dedicated', "
+        "tahun='2025', filename='Internet_Dedicated.pdf'. "
+        "Run this step after listing available product files."
     ),
     structured_output=True,
 )
@@ -105,10 +119,12 @@ async def add_product_knowledge_tool(
 
 @mcp.tool(
     name="add_kak_tor_knowledge",
-    title="Ingest KAK/TOR PDF ke Knowledge Base",
+    title="Add KAK/TOR PDF to Project Knowledge Base",
     description=(
-        "Tambahkan dokumen KAK/TOR ke vectorstore dan ekspor ke markdown. "
-        "Metadata mencakup nama pelanggan, proyek, dan tahun."
+        "Use this tool to ingest a KAK/TOR PDF into the knowledge base only if user explisit ask for it. "
+        "Requires: filename (from list_kak_tor_files), pelanggan (customer name), project (project name), and tahun. "
+        "Example: filename='CustomerA/2025/ProjectX.pdf', pelanggan='CustomerA', project='ProjectX', tahun='2025'. "
+        "Run this step after listing KAK/TOR files."
     ),
     structured_output=True,
 )
@@ -128,9 +144,13 @@ async def add_kak_tor_knowledge_tool(
 
 
 @mcp.tool(
-    name="summarize_kak_with_llm",
-    title="Ringkasan KAK/TOR via LLM",
-    description="Gabungkan prompt + markdown proyek dan hasilkan ringkasan melalui LLM lalu index ke vectorstore.",
+    name="summarize_kak_tor_with_llm",
+    title="Summarize KAK/TOR Markdown with LLM",
+    description=(
+        "Use this tool to generate a summary of the project KAK/TOR. "
+        "Requires: kak_md_name (markdown filename), pelanggan, project, tahun. "
+        "Example: kak_md_name='CustomerA_ProjectX.md', pelanggan='CustomerA', project='ProjectX', tahun='2025'."
+    ),
     structured_output=True,
 )
 async def summarize_kak_with_llm_tool(
@@ -150,16 +170,13 @@ async def summarize_kak_with_llm_tool(
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
     name="rag_retrieval",
-    title="RAG Retrieval",
+    title="Retrieve Relevant Context from Knowledge Base",
     description=(
-        "1️. Metadata optional: Periksa apakah query pengguna menyertakan filter metadata "
-        "(project, pelanggan, tahun). Jika tidak ada, lanjutkan retrieval tanpa filter.  \n"
-        "2️. Jika metadata disertakan, pastikan nilainya spesifik (salah satu dari opsi yang tersedia).  \n"
-        "3️. Panggil retrieval dengan (query, k, metadata_filter).  \n"
-        "4️. Jika hasil kosong, backend akan mengembalikan daftar metadata yang valid.  \n"
-        "   – Setelah menerima daftar ini, LLM harus memilih nilai yang benar dan memanggil "
-        "`rag_retrieval` ulang dengan filter yang diperbaiki.  \n"
-        "5️. Kembalikan array JSON berisi objek `{ text, metadata, citation, score, query_time }`."
+        "Retrieve text and metadata from the vectorstore relevant to a query. "
+        "Knowledge base for project information and standard product information. "
+        "Metadata filter is optional. "
+        "If metadata is missing, run `list_all_metadata_entries` to see available metadata instead of guessing. "
+        "Example input: query='technical specs for Dedicated 100 Mbps', k=5, metadata_filter={'project':'ProjectX'}"
     ),
     structured_output=True,
 )
@@ -180,9 +197,13 @@ async def rag_retrieval_tool(
 
 
 @mcp.tool(
-    name="list_metadata_entries",
-    title="Daftar Metadata Dokumen",
-    description="Menampilkan seluruh metadata dokumen (project, pelanggan, tahun, dll) yang telah masuk ke vectorstore.",
+    name="list_all_metadata_entries",
+    title="List All Available Document Metadata",
+    description=(
+        "List available metadata entries from the vectorstore, "
+        "such as project, product, customer, and year. "
+        "Use this before retrieval if you need to know possible metadata values."
+    ),
     structured_output=True,
 )
 async def list_metadata_entries_tool(limit: int = 20) -> List[Dict[str, Any]]:
@@ -191,11 +212,8 @@ async def list_metadata_entries_tool(limit: int = 20) -> List[Dict[str, Any]]:
 
 @mcp.tool(
     name="reset_vector_database",
-    title="Reset Ulang Vector Database",
-    description=(
-        "Menghapus semua data vector store, membersihkan file manifest/status, "
-        "dan menginisialisasi ulang LanceDB agar siap digunakan kembali."
-    ),
+    title="Reset Vectorstore",
+    description="Reset the entire vectorstore database. This will delete all stored documents and metadata.",
     structured_output=True,
 )
 async def reset_vector_database_tool() -> Dict[str, Any]:
@@ -214,12 +232,9 @@ async def reset_vector_database_tool() -> Dict[str, Any]:
 
 
 @mcp.tool(
-    name="reset_and_reingest_all",
-    title="Reset & Re-Ingest Semua Dokumen",
-    description=(
-        "Reset vectorstore dan secara otomatis melakukan ingest ulang semua file PDF dari folder "
-        "kak_tor dan product_knowledge. Gunakan jika ingin memulai ulang proses index dokumen dari nol."
-    ),
+    name="reset_and_reingest_all_documents",
+    title="Reset and Re-ingest All Documents",
+    description="Reset the vectorstore and re-ingest all PDF files from KAK/TOR and product knowledge folders.",
     structured_output=True,
 )
 async def reset_and_reingest_all_tool() -> Dict[str, Any]:
@@ -295,8 +310,8 @@ async def reset_and_reingest_all_tool() -> Dict[str, Any]:
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
     name="read_project_markdown",
-    title="Baca Markdown Proyek",
-    description="Baca isi markdown KAK/TOR sebagai context untuk proposal pipeline.",
+    title="Read Project Markdown Content",
+    description="Read a project markdown file as context for proposal generation.",
     structured_output=True,
 )
 def read_project_markdown_tool(filename: str) -> Dict[str, Any]:
@@ -305,8 +320,8 @@ def read_project_markdown_tool(filename: str) -> Dict[str, Any]:
 
 @mcp.tool(
     name="get_template_placeholders",
-    title="Ambil Placeholder Template Proposal",
-    description="Kembalikan array dari seluruh placeholder yang harus diisi dalam template .docx proposal.",
+    title="Get Proposal Template Placeholders",
+    description="Return all placeholders in the .docx proposal template that need to be filled.",
     structured_output=True,
 )
 def get_template_placeholders_tool() -> Dict[str, Any]:
@@ -316,7 +331,8 @@ def get_template_placeholders_tool() -> Dict[str, Any]:
 @mcp.tool(
     name="generate_proposal_docx",
     title="Generate Proposal Word Document",
-    description="Generate proposal .docx dari template dan context JSON berisi field proposal.",
+    description="Generate a proposal .docx file from a template and provided JSON context.\n"
+    "Run this tool only after provide template placeholder as a context.",
     structured_output=True,
 )
 def generate_proposal_docx_tool(
@@ -332,7 +348,7 @@ def generate_proposal_docx_tool(
 @mcp.tool(
     name="websearch",
     title="Web Search",
-    description="Search the web using Tavily API.",
+    description="Search the web for information about a query only if the information did not provider in retrieval.",
     structured_output=True,
 )
 def websearch_tool(query: str) -> List[Dict]:
