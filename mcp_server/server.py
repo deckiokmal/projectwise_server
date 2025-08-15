@@ -1,8 +1,8 @@
 from __future__ import annotations
-from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.session import ServerSession
 from tavily import TavilyClient
 import os
 
@@ -37,72 +37,33 @@ doc_tools = DocGeneratorTools()
 
 
 # ──────────────────────────────────────────────────────────────
-# Heartbeat message tool
+# Definisi tools untuk AI Tender Analyzer dengan RAGPipeline
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="heartbeat",
-    title="Keep MCP Connection Alive",
-    description="Client uses this tool to keep the MCP server connection alive. "
-    "No arguments needed. Returns 'ok' if server is alive.",
-    structured_output=True,
+    name="heartbeat_message",
+    title="Heartbeat message for keeping session with client.",
+    description="Session alive tool.",
+    structured_output=False,
 )
-def heartbeat_tool() -> str:
-    return "ok"
-
-
-# ──────────────────────────────────────────────────────────────
-# Utility untuk listing files dalam KAK/TOR dan Product dir
-# ──────────────────────────────────────────────────────────────
-@mcp.tool(
-    name="list_kak_tor_files",
-    title="List KAK/TOR PDF Files for Project Context",
-    description=(
-        "Use this tool when you need to find available KAK/TOR Project PDF files before adding them to the knowledge base. "
-        "Returns relative file paths from the KAK/TOR base folder. "
-        "Typical usage: Step 1 before calling 'add_kak_tor_knowledge'. "
-        "Example output: { 'files': ['CustomerA/2025/ProjectX.pdf'] }"
-    ),
-    structured_output=True,
-)
-def list_kak_files_tool() -> Dict[str, Any]:
-    base = Path(settings.kak_tor_base_path).expanduser().resolve()
-    files = [str(p.relative_to(base)) for p in base.rglob("*.pdf")]
-    return {"files": files}
-
-
-@mcp.tool(
-    name="list_product_files_for_proposal",
-    title="List Product PDF Files for Proposal Preparation",
-    description=(
-        "Use this tool to see available standard product-related PDF files in the knowledge base folder "
-        "before adding product knowledge. "
-        "Typical usage: Step 1 before calling 'add_product_knowledge'. "
-        "Example output: { 'files': ['Internet/2025/Dedicated_100Mbps.pdf'] }"
-    ),
-    structured_output=True,
-)
-def list_product_files_tool() -> Dict[str, Any]:
-    base = Path(settings.product_base_path).expanduser().resolve()
-    files = [str(p.relative_to(base)) for p in base.rglob("*.pdf")]
-    return {"files": files}
+def heartbeat():
+    return "connection alive"
 
 
 # ──────────────────────────────────────────────────────────────
 # Definisi tools untuk AI Tender Analyzer dengan RAGPipeline
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="add_product_knowledge",
-    title="Add Product PDF to Proposal Knowledge Base",
+    name="ingest_product_knowledge",
+    title="Ingest Product PDF into vector database for Product Knowledge Base",
     description=(
-        "Use this tool to ingest a product PDF into the proposal knowledge base only if user explisit ask for it. "
-        "Requires: category, product_name, year, filename (from list_product_files_for_proposal). "
+        "Use this tool to ingest a product PDF into vector database for product knowledge base only if user explisit ask for it. "
+        "Requires: category, product_name, year, filename. "
         "Example: category='Internet Services', product_name='Internet_Dedicated', "
         "tahun='2025', filename='Internet_Dedicated.pdf'. "
-        "Run this step after listing available product files."
     ),
     structured_output=True,
 )
-async def add_product_knowledge_tool(
+async def ingest_product_knowledge_tool(
     category: str,
     product_name: str,
     tahun: str,
@@ -118,17 +79,16 @@ async def add_product_knowledge_tool(
 
 
 @mcp.tool(
-    name="add_kak_tor_knowledge",
-    title="Add KAK/TOR PDF to Project Knowledge Base",
+    name="ingest_kak_tor_knowledge",
+    title="Ingest KAK/TOR PDF into vector database for Project Knowledge Base",
     description=(
-        "Use this tool to ingest a KAK/TOR PDF into the knowledge base only if user explisit ask for it. "
-        "Requires: filename (from list_kak_tor_files), pelanggan (customer name), project (project name), and tahun. "
-        "Example: filename='CustomerA/2025/ProjectX.pdf', pelanggan='CustomerA', project='ProjectX', tahun='2025'. "
-        "Run this step after listing KAK/TOR files."
+        "Use this tool to ingest a KAK/TOR PDF into vector database for project knowledge base only if user explisit ask for it. "
+        "Requires: filename, pelanggan (customer name), project (project name), and tahun. "
+        "Example: filename='ProjectX.pdf', pelanggan='CustomerA', project='ProjectX', tahun='2025'. "
     ),
     structured_output=True,
 )
-async def add_kak_tor_knowledge_tool(
+async def ingest_kak_tor_knowledge_tool(
     filename: str,
     pelanggan: str,
     project: str,
@@ -144,23 +104,23 @@ async def add_kak_tor_knowledge_tool(
 
 
 @mcp.tool(
-    name="summarize_kak_tor_with_llm",
-    title="Summarize KAK/TOR Markdown with LLM",
+    name="project_summaries_analysis",
+    title="Analyze Project KAK/TOR",
     description=(
-        "Use this tool to generate a summary of the project KAK/TOR. "
-        "Requires: kak_md_name (markdown filename), pelanggan, project, tahun. "
-        "Example: kak_md_name='CustomerA_ProjectX.md', pelanggan='CustomerA', project='ProjectX', tahun='2025'."
+        "Use this tool to generate an analysis of the project KAK/TOR. "
+        "Requires: kak_md_name (project name), pelanggan, project, tahun. "
+        "Example: filename='ProjectX', pelanggan='CustomerA', project='ProjectX', tahun='2025'."
     ),
     structured_output=True,
 )
-async def summarize_kak_with_llm_tool(
-    kak_md_name: str, pelanggan: str, project: str, tahun: str
+async def project_summaries_analysis_tool(
+    filename: str, pelanggan: str, project: str, tahun: str
 ) -> Dict[str, Any]:
-    if not kak_md_name.lower().endswith(".md"):
-        kak_md_name += ".md"
+    if not filename.lower().endswith(".md"):
+        filename += ".md"
 
     result = await rag_tools.build_summary_kak_payload_and_summarize(
-        kak_md_name, pelanggan, project, tahun
+        filename, pelanggan, project, tahun
     )
     return {"result": result}
 
@@ -169,18 +129,18 @@ async def summarize_kak_with_llm_tool(
 # Utility untuk Retrieval Augmented Generation
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="rag_retrieval",
-    title="Retrieve Relevant Context from Knowledge Base",
+    name="project_product_retrieval_informations",
+    title="Retrieve Relevant Context from vector database for Project and Product Knowledge Base",
     description=(
-        "Retrieve text and metadata from the vectorstore relevant to a query. "
-        "Knowledge base for project information and standard product information. "
-        "Metadata filter is optional. "
-        "If metadata is missing, run `list_all_metadata_entries` to see available metadata instead of guessing. "
-        "Example input: query='technical specs for Dedicated 100 Mbps', k=5, metadata_filter={'project':'ProjectX'}"
+        "Retrieve relevant context from vector database for project and product knowledge base. "
+        "Requires: query, k (number of results), metadata_filter (optional). "
+        "Example input: query='technical specs for Dedicated 100 Mbps', k=5, metadata_filter={'project':'ProjectX', 'pelanggan':'CustomerA', 'tahun':'2025'}"
+        "For product metadata input:"
+        "metadata_filter={'category':'Internet Services', 'product_name':'Internet_Dedicated', 'tahun':'2025'}"
     ),
     structured_output=True,
 )
-async def rag_retrieval_tool(
+async def project_product_retrieval_tool(
     query: str,
     k: Optional[int] = 10,
     metadata_filter: Optional[Dict[str, Any]] = None,
@@ -196,9 +156,12 @@ async def rag_retrieval_tool(
     return result
 
 
+# ──────────────────────────────────────────────────────────────
+# Definisi tools untuk Document Generation
+# ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="list_all_metadata_entries",
-    title="List All Available Document Metadata",
+    name="list_all_metadata_rag",
+    title="List All Available Document Metadata in vector database",
     description=(
         "List available metadata entries from the vectorstore, "
         "such as project, product, customer, and year. "
@@ -210,118 +173,24 @@ async def list_metadata_entries_tool(limit: int = 20) -> List[Dict[str, Any]]:
     return await rag_tools.pipeline.list_available_metadata(limit)
 
 
-@mcp.tool(
-    name="reset_vector_database",
-    title="Reset Vectorstore",
-    description="Reset the entire vectorstore database. This will delete all stored documents and metadata.",
-    structured_output=True,
-)
-async def reset_vector_database_tool() -> Dict[str, Any]:
-    result = await rag_tools.pipeline.reset_vector_database()
-
-    # Tambahan informasi jika berhasil
-    if result.get("status") == "success":
-        metadata = await rag_tools.pipeline.list_available_metadata()
-        return {
-            **result,
-            "total_metadata_after_reset": len(metadata),
-            "example_entry": metadata[0] if metadata else None,
-        }
-
-    return result
-
-
-@mcp.tool(
-    name="reset_and_reingest_all_documents",
-    title="Reset and Re-ingest All Documents",
-    description="Reset the vectorstore and re-ingest all PDF files from KAK/TOR and product knowledge folders.",
-    structured_output=True,
-)
-async def reset_and_reingest_all_tool() -> Dict[str, Any]:
-    base_kak_path = Path(settings.kak_tor_base_path).expanduser().resolve()
-    base_prod_path = Path(settings.product_base_path).expanduser().resolve()
-
-    # 1. Reset vector DB
-    reset_result = await rag_tools.pipeline.reset_vector_database()
-
-    if reset_result.get("status") != "success":
-        return {
-            "status": "error",
-            "message": f"Gagal reset database: {reset_result.get('message')}",
-        }
-
-    log = {"reset": reset_result, "ingested": {"kak": [], "product": []}}
-
-    # 2. Re-ingest semua KAK/TOR PDF
-    for pdf_path in base_kak_path.rglob("*.pdf"):
-        relative = pdf_path.relative_to(base_kak_path)
-        parts = relative.parts
-        if len(parts) < 3:
-            continue  # skip invalid paths
-
-        pelanggan = parts[0].replace("_", " ")
-        tahun = parts[1]
-        filename = parts[-1]
-        project = Path(filename).stem.replace("_", " ")
-
-        result = await rag_tools.ingest_kak_tor_chunks(
-            filename=filename,
-            pelanggan=pelanggan,
-            project=project,
-            tahun=tahun,
-            overwrite=True,
-        )
-        log["ingested"]["kak"].append({"filename": str(relative), "result": result})
-
-    # 3. Re-ingest semua Produk PDF
-    for pdf_path in base_prod_path.rglob("*.pdf"):
-        relative = pdf_path.relative_to(base_prod_path)
-        parts = relative.parts
-        if len(parts) < 3:
-            continue
-
-        category = parts[0].replace("_", " ")
-        tahun = parts[1]
-        product_name = parts[2].replace("_", " ")
-        filename = pdf_path.name
-
-        result = await rag_tools.ingest_product_knowledge_chunks(
-            filename=str(relative),
-            product_name=product_name,
-            category=category,
-            tahun=tahun,
-            overwrite=True,
-        )
-        log["ingested"]["product"].append({"filename": str(relative), "result": result})
-
-    return {
-        "status": "success",
-        "summary": {
-            "reset_message": reset_result["message"],
-            "kak_files": len(log["ingested"]["kak"]),
-            "product_files": len(log["ingested"]["product"]),
-        },
-        "details": log,
-    }
-
-
 # ──────────────────────────────────────────────────────────────
 # Definisi tools untuk Document Generation
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="read_project_markdown",
-    title="Read Project Markdown Content",
-    description="Read a project markdown file as context for proposal generation.",
+    name="project_context_for_proposal",
+    title="Read Project Content for anlysis and Proposal Generation",
+    description="Read a project content file as context for analysis and proposal generation.",
     structured_output=True,
 )
-def read_project_markdown_tool(filename: str) -> Dict[str, Any]:
+def project_context_for_proposal_tool(filename: str) -> Dict[str, Any]:
     return doc_tools.read_project_markdown(filename)
 
 
 @mcp.tool(
     name="get_template_placeholders",
     title="Get Proposal Template Placeholders",
-    description="Return all placeholders in the .docx proposal template that need to be filled.",
+    description="Return all placeholders in the .docx proposal template that need to be filled for Proposal Generation."
+    "Use this tools before calling 'generate_proposal_docx' tool and after 'project_context_for_proposal' tool.",
     structured_output=True,
 )
 def get_template_placeholders_tool() -> Dict[str, Any]:
@@ -347,8 +216,8 @@ def generate_proposal_docx_tool(
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
     name="websearch",
-    title="Web Search",
-    description="Search the web for information about a query only if the information did not provider in retrieval.",
+    title="Web Search Tool",
+    description="Search the web for information about a query only if the information did not provider in retrieval or user explisit ask for it.",
     structured_output=True,
 )
 def websearch_tool(query: str) -> List[Dict]:
@@ -357,15 +226,3 @@ def websearch_tool(query: str) -> List[Dict]:
         return response["results"]
     except Exception as e:
         return [{"error": f"Error: {str(e)}"}]
-
-
-# ──────────────────────────────────────────────────────────────
-# Elicitation capabilities tools
-# ──────────────────────────────────────────────────────────────
-
-
-# ──────────────────────────────────────────────────────────────
-# Run FastMCP server
-# ──────────────────────────────────────────────────────────────
-# if __name__ == "__main__":
-#     mcp.run(transport="sse")

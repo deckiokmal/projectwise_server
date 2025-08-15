@@ -16,3 +16,5 @@ wheels/
 logs/
 
 lancedb_storage/
+
+mcp_server/data/
