@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Dict, Any, Optional, List
 
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 from tavily import TavilyClient
 import os
@@ -40,7 +40,7 @@ doc_tools = DocGeneratorTools()
 # Definisi tools untuk AI Tender Analyzer dengan RAGPipeline
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(
-    name="heartbeat_message",
+    name="heartbeat",
     title="Heartbeat message for keeping session with client.",
     description="Session alive tool.",
     structured_output=False,
@@ -226,3 +226,24 @@ def websearch_tool(query: str) -> List[Dict]:
         return response["results"]
     except Exception as e:
         return [{"error": f"Error: {str(e)}"}]
+
+
+# ──────────────────────────────────────────────────────────────
+# Websearch capability using Tavily API (free 1000 Credits/month)
+# ──────────────────────────────────────────────────────────────
+# TODO: next step prepare buat mcp elicitation. Human in a loop!
+@mcp.tool()
+async def long_running_task(task_name: str, ctx: Context[ServerSession, None], steps: int = 5) -> str:
+    """Execute a task with progress updates."""
+    await ctx.info(f"Starting: {task_name}")
+
+    for i in range(steps):
+        progress = (i + 1) / steps
+        await ctx.report_progress(
+            progress=progress,
+            total=1.0,
+            message=f"Step {i + 1}/{steps}",
+        )
+        await ctx.debug(f"Completed step {i + 1}")
+
+    return f"Task '{task_name}' completed"

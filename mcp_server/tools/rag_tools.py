@@ -66,6 +66,7 @@ class RAGTools:
             )
             return 0
 
+    # TODO: ini adalah CPU bound proses. bisa ditingkatkan dengan multiprocessing/GPU.
     async def ingest_kak_tor_chunks(
         self,
         filename: str,
@@ -97,7 +98,7 @@ class RAGTools:
 
         try:
             # 1. Konversi PDF ke document
-            result = DocumentConverter().convert(source=str(path))
+            result = DocumentConverter().convert(source=str(path)) # TODO: disini CPU Bound nya
 
             # 2. Chunk dan embed
             chunks = await self.pipeline._chunk_document_meta_kak(
