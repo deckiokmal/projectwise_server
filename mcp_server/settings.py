@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -11,42 +10,52 @@ env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
+    # ====================================
     # Konfigurasi Model
+    # ====================================
     model_config = SettingsConfigDict(env_file=str(env_path), env_file_encoding="utf-8")
 
+    # ====================================
     # Model dan parameter LLM
-    ollama_host: str = "http://localhost:11434"
+    # ====================================
     openai_api_key: str = os.getenv("OPENAI_API_KEY")  # type: ignore
     embedding_model: str = "text-embedding-3-small"
-    llm_model: str = "gpt-4.1"
+    llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
     max_token: int = 16000  # 100.000 token untuk ringkasan
 
+    # ====================================
     # Direktori penyimpanan dan dokumen
-    kak_tor_base_path: str = "mcp_server/data/kak_tor"
-    kak_tor_md_base_path: str = "mcp_server/data/kak_tor_md"
-    kak_tor_summaries_base_path: str = "mcp_server/data/kak_tor_summaries"
-    product_base_path: str = "mcp_server/data/product_standard"
-    templates_base_path: str = "mcp_server/data/templates/prompts"
-    summaries_instruction_path: str = (
-        "mcp_server/data/templates/prompts/kak_analyzer.txt"
-    )
-    product_summaries_instruction_path: str = (
-        "mcp_server/data/templates/prompts/product_sizing_summaries.txt"
-    )
-    proposal_template_path: str = (
-        "mcp_server/data/templates/proposals/proposal_template.docx"
-    )
-    proposal_generate_path: str = "mcp_server/data/proposal_generated"
-    knowledge_source_extensions: List[str] = [".pdf", ".md"]
+    # ====================================
+    # 1) Document Knowledge Base (LanceDB)
+    kak_tor_base_path: str = "data/kak_tor_pdf"
+    kak_tor_md_base_path: str = "data/kak_tor_md"
+    kak_tor_summaries_base_path: str = "data/kak_tor_summaries"
+    
+    product_base_path: str = "data/product_standard_pdf"
+    product_md_base_path: str = "data/product_standard_md"
+    product_summaries_base_path: str = "data/product_standard_summaries"
 
-    status_file_path: str = "mcp_server/data/ingestion_status.json"
-    manifest_file_path: str = "mcp_server/data/ingested_manifest.json"
+    # 2) Document Prompting
+    prompts_base_path: str = "mcp_server/prompt"
 
-    # Pengaturan chunking & retrieval (LanceDB))
-    db_connection: str = "local"  # local, s3, cloud
+    # 3) Document Proposal Proyek
+    proposal_template_base_path: str = "mcp_server/data/document_templates"
+    proposal_generated_base_path: str = "data/proposal_generated"
+
+    # 4) JSON File
+    json_ingestion_status_file: str = "mcp_server/data/ingestion_status.json"
+    json_ingestion_manifest_file: str = "mcp_server/data/ingested_manifest.json"
+
+    # ====================================
+    # Database Vector LanceDB
+    # ====================================
+    # Pengaturan chunking & retrieval
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     cloud_api_key: str = os.getenv("LANCEDB_CLOUD_API_KEY", "")
+
+    # DB Local Config
+    db_connection: str = "local"  # local, s3, cloud
     vector_store_path: str = (
         "lancedb_storage"  # "s3://my-bucket/lancedb" "db://my_database"
     )

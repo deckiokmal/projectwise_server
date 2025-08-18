@@ -108,21 +108,18 @@ async def ingest_kak_tor_knowledge_tool(
     title="Analyze Project KAK/TOR",
     description=(
         "Use this tool to generate an analysis of the project KAK/TOR. "
-        "Requires: kak_md_name (project name), pelanggan, project, tahun. "
-        "Example: filename='ProjectX', pelanggan='CustomerA', project='ProjectX', tahun='2025'."
+        "Requires: project (project name), pelanggan, tahun. "
+        "Example: project='ProjectX', pelanggan='CustomerA', tahun='2025'."
     ),
     structured_output=True,
 )
 async def project_summaries_analysis_tool(
-    filename: str, pelanggan: str, project: str, tahun: str
+    project: str, pelanggan: str, tahun: str
 ) -> Dict[str, Any]:
-    if not filename.lower().endswith(".md"):
-        filename += ".md"
-
-    result = await rag_tools.build_summary_kak_payload_and_summarize(
-        filename, pelanggan, project, tahun
+    result = await rag_tools.read_kak_summaries(
+        project, pelanggan, tahun
     )
-    return {"result": result}
+    return result
 
 
 # ──────────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ settings = Settings()
 
 # Helper untuk menyimpan status job - Ingestion KAK/TOR dan Product
 # Status disimpan dalam file JSON di direktori data
-STATUS_FILE = Path(settings.status_file_path).expanduser().resolve()
+STATUS_FILE = Path(settings.json_ingestion_status_file).expanduser().resolve()
 STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 

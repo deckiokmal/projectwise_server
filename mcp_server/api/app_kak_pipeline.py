@@ -92,7 +92,7 @@ async def process_kak_pipeline(filename, pelanggan, project, tahun, job_id):
 
         kak_md_name = Path(ingest_result["markdown_file"]).name
 
-        summary = await rag_tools.build_summary_kak_payload_and_summarize(
+        summary = await rag_tools.build_summary_kak_payload_and_ingest(
             kak_tor_name=kak_md_name,
             pelanggan=pelanggan,
             project=project,
