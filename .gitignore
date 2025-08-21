@@ -18,3 +18,4 @@ logs/
 lancedb_storage/
 data/
 mcp_server/data/
+vectorstore/

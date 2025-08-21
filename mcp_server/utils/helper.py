@@ -1,54 +1,15 @@
+# mcp_server/utils/helper.py
 from __future__ import annotations
-import re
+
 import tiktoken
-import unicodedata
 from pathlib import Path
-from typing import Optional, List
-from mcp_server.utils.logger import logger
+from typing import List
+from mcp_server.utils.logger import get_logger
+from mcp_server.utils.llm_chains import LLMChains
+import json
 
 
-# ---------------------------------------------------------------------------
-# Utility helpers Safe Filename
-# ---------------------------------------------------------------------------
-def slugify(text: str) -> str:
-    """Ubah text menjadi slug yang aman untuk nama folder.
-
-    Args:
-        text (str): text yang akan diubah menjadi slug.
-
-    Returns:
-        str: slug aman. contoh: "Nama Folder" -> "nama_folder"
-    """
-    slug = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", "_", slug.lower()).strip("_")
-
-
-# helper build_summary_tender_payload_tool - kak_tor_md_name
-_MD_RE = re.compile(r"\.md$", re.I)
-
-
-def normalize_md_name(name: Optional[str]) -> Optional[str]:
-    """
-    • Hilangkan ekstensi .md (huruf besar/kecil)
-    • Trim spasi di kiri-kanan
-    • Kembalikan None bila arg None/blank
-    """
-    if not name:
-        return None
-    return _MD_RE.sub("", name.strip())
-
-
-# ============================================================
-# Helper untuk membungkus JSON ke Markdown Ringkasan
-# ============================================================
-def to_kak_markdown(content: str) -> str:
-    """Bungkus JSON ke blok code Markdown."""
-    return f"## Ringkasan Tender\n\n{content}"
-
-
-def to_product_markdown(content: str) -> str:
-    """Bungkus JSON ke blok code Markdown."""
-    return f"## Ringkasan sizing produk\n\n```json\n{content}\n```\n"
+logger = get_logger(__name__)
 
 
 # ============================================================
@@ -109,7 +70,7 @@ def get_tokenizer(model_name: str):
 # ============================================================
 # Fungsi untuk membagi teks panjang menjadi potongan sesuai token limit
 # ============================================================
-def split_by_token_limit(text: str, tokenizer, max_tokens: int) -> List[str]:
+def _split_by_token_limit(text: str, tokenizer, max_tokens: int) -> List[str]:
     """
     Membagi teks panjang menjadi potongan kecil sesuai token limit.
     """
@@ -126,13 +87,19 @@ def split_by_token_limit(text: str, tokenizer, max_tokens: int) -> List[str]:
 # Helper ringkasan dokumen panjang dengan chunking
 # ============================================================
 async def summarize_long_product_text(
-    llm, full_text: str, instruction: str, model_name: str, max_tokens: int = 3000
+    llmchains: LLMChains,
+    full_text: str,
+    instruction: str,
+    model_name: str,
+    prefer: str = "chat",
+    max_tokens: int = 3000,
 ) -> str:
     """
     Ringkas teks panjang dengan memecahnya menjadi beberapa bagian
     jika jumlah token melebihi context window model.
     """
     try:
+        # Inisiasi tokenizer
         tokenizer = get_tokenizer(model_name)
         total_tokens = len(tokenizer.encode(full_text))
 
@@ -140,33 +107,67 @@ async def summarize_long_product_text(
             f"Token total input: {total_tokens} | Limit per chunk: {max_tokens}"
         )
 
+        # Pesan awal - 1
+        msg = [
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": full_text},
+        ]
+
+        # Check token limit
+        # Eksekusi summary jika tidak melebihi limit
         if total_tokens <= max_tokens:
             # Jika tidak melebihi limit → langsung ringkas
-            summary = await llm.generate_text(input=full_text, instructions=instruction)
-            return summary
+            summary = await llmchains.generate_text(
+                messages_or_input=msg, prefer=prefer
+            )
+            return summary.get("data")  # type: ignore
 
         # Jika panjang → bagi menjadi bagian kecil
-        chunks = split_by_token_limit(full_text, tokenizer, max_tokens)
+        chunks = _split_by_token_limit(full_text, tokenizer, max_tokens)
+
+        # Pesan yang telah di chunks
+        msg_part = [
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": chunks},
+        ]
+
         summaries = []
 
+        # Jalankan summary tiap chunk
         for idx, part in enumerate(chunks):
             logger.info(f"Ringkas bagian {idx + 1}/{len(chunks)}")
             try:
-                part_summary = await llm.generate_text(
-                    input=part, instructions=instruction
+                part_summary = await llmchains.generate_text(
+                    messages_or_input=msg_part, prefer=prefer
                 )
-                summaries.append(part_summary.strip())
+                summaries.append(part_summary.get("data").strip())  # type: ignore
             except Exception as e:
                 logger.warning(f"Gagal ringkas bagian ke-{idx + 1}: {e}")
 
-        # Gabungkan semua ringkasan per bagian menjadi satu teks utuh
+        # Gabungkan semua ringkasan per chunk menjadi satu teks utuh
         full_summary = "\n\n".join(summaries).strip()
-
         if not full_summary:
             raise ValueError("Ringkasan akhir kosong setelah seluruh bagian diringkas.")
 
-        return full_summary
+        # Analysis kembali hasil summary tiap chunks
+        msg_full = [
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": full_summary},
+        ]
+
+        summary_sum = await llmchains.generate_text(
+            messages_or_input=msg_full, prefer=prefer
+        )
+
+        # Kembalikan summary utuh
+        return summary_sum.get("data")  # type: ignore
 
     except Exception as e:
         logger.error(f"Gagal melakukan ringkasan multi-bagian: {e}")
-        return "[Ringkasan gagal dibuat karena input terlalu panjang atau kesalahan internal]"
+        return json.dumps(
+            {
+                "status": "error",
+                "message": "[Ringkasan gagal dibuat karena input terlalu panjang atau kesalahan internal]",
+                "error": e,
+            }
+        )

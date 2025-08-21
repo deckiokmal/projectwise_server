@@ -1,3 +1,4 @@
+# mcp_server/utils/product_path_utils.py
 from __future__ import annotations
 
 import os
@@ -16,6 +17,30 @@ RE_NON_ALNUM = re.compile(r"[^a-z0-9]+")  # non-alfanumerik -> underscore
 RE_MULTI_UNDER = re.compile(r"_+")
 RE_TR_SUMMARY = re.compile(r"(?i)(?:[_\-\s])?summary$")  # akhiran "summary"
 ILLEGAL_WIN_CHARS = r'<>:"/\\|?*'  # karakter ilegal utk komponen nama file (Windows)
+_WINDOWS_RESERVED = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+}
 
 
 def _strip_accents(s: str) -> str:
@@ -40,6 +65,10 @@ def _sanitize_component(name: str) -> str:
     return name or "untitled"
 
 
+def _avoid_windows_reserved(stem: str) -> str:
+    return f"{stem}_" if stem in _WINDOWS_RESERVED else stem
+
+
 # ============================================================
 # Struktur hasil resolusi
 # ============================================================
@@ -48,6 +77,8 @@ class PathInfo:
     project_root: Path
     base_dir_abs: Path
     filename_final: str
+    category_final: str
+    product_final: str
     full_path: Path
     existed_before: bool
     created_dirs: bool
@@ -102,19 +133,19 @@ def _norm_pdf_filename(src: str) -> str:
     """
     base = os.path.basename((src or "").strip()).rstrip(" .")
     base, _ext = os.path.splitext(base)
-    base = _sanitize_component(base)
+    base = _avoid_windows_reserved(_sanitize_component(base))
     return f"{base}.pdf"
 
 
 def _norm_md_filename(src: str) -> str:
     """
-    Nama file MD -> <basename>.md (untuk direktori product_tor_md)
+    Nama file MD -> <basename>.md (untuk direktori product_md)
     - dari argumen filename (tanpa tambahan '_summary')
     - lowercase, spasi → underscore, sanitasi karakter
     """
     base = os.path.basename((src or "").strip()).rstrip(" .")
     base, _ext = os.path.splitext(base)
-    base = _sanitize_component(base)
+    base = _avoid_windows_reserved(_sanitize_component(base))
     return f"{base}.md"
 
 
@@ -128,16 +159,17 @@ def _norm_summary_md_filename(src: str) -> str:
     base = _sanitize_component(base)
     if RE_TR_SUMMARY.search(base):
         base = RE_TR_SUMMARY.sub("", base).rstrip("_- ")
-    base = f"{base}_summary" if base else "summary"
+    base = _avoid_windows_reserved(f"{base}_summary" if base else "summary")
     return f"{base}.md"
 
 
 # ============================================================
-# Resolver generik per base + (product/tahun)
+# Resolver generik per base + (category/tahun)
 # ============================================================
 def _resolve_under_base(
     base_dir_rel: str,
     product: str,
+    category: str,
     tahun: str,
     filename_final: str,
     *,
@@ -145,13 +177,19 @@ def _resolve_under_base(
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
+    """
+    Struktur folder: <base>/<category>/<tahun> lalu file di situ.
+    'product' tidak mempengaruhi struktur folder, namun disimpan pada PathInfo
+    (mirroring 'project_final' di KAK utils untuk logging & audit).
+    """
     pr = (project_root or find_project_root()).resolve()
 
-    # susun <base>/<product>/<tahun>
+    # susun <base>/<category>/<tahun>
     base_rel = _ensure_rel(base_dir_rel)
-    product_dir = _sanitize_component(product)
-    tahun_dir = _sanitize_component(str(tahun))
-    tier_rel = f"{base_rel}/{product_dir}/{tahun_dir}"
+    category_dir = _avoid_windows_reserved(_sanitize_component(category))
+    tahun_dir = _avoid_windows_reserved(_sanitize_component(str(tahun)))
+    product_sanitize = _avoid_windows_reserved(_sanitize_component(product))
+    tier_rel = f"{base_rel}/{category_dir}/{tahun_dir}"
 
     base_abs = (pr / _ensure_rel(tier_rel)).resolve()
     common = os.path.commonpath([str(base_abs), str(pr)])
@@ -190,6 +228,8 @@ def _resolve_under_base(
         project_root=pr,
         base_dir_abs=base_abs,
         filename_final=full.name,
+        category_final=category_dir,
+        product_final=product_sanitize,
         full_path=full,
         existed_before=existed,
         created_dirs=created_dirs,
@@ -203,6 +243,7 @@ def _resolve_under_base(
 def resolve_product_pdf(
     settings,
     product: str,
+    category: str,
     tahun: str,
     filename: str,
     *,
@@ -210,11 +251,12 @@ def resolve_product_pdf(
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base= settings.product_base_path>/<product>/<tahun>/<filename>.pdf"""
+    """<base = settings.product_base_path>/<category>/<tahun>/<filename>.pdf"""
     fname = _norm_pdf_filename(filename)
     return _resolve_under_base(
         settings.product_base_path,
         product,
+        category,
         tahun,
         fname,
         project_root=project_root,
@@ -226,6 +268,7 @@ def resolve_product_pdf(
 def resolve_product_md(
     settings,
     product: str,
+    category: str,
     tahun: str,
     filename: str,
     *,
@@ -233,11 +276,12 @@ def resolve_product_md(
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base= settings.product_md_base_path>/<product>/<tahun>/<filename>.md"""
+    """<base = settings.product_md_base_path>/<category>/<tahun>/<filename>.md"""
     fname = _norm_md_filename(filename)
     return _resolve_under_base(
         settings.product_md_base_path,
         product,
+        category,
         tahun,
         fname,
         project_root=project_root,
@@ -249,6 +293,7 @@ def resolve_product_md(
 def resolve_product_summary_md(
     settings,
     product: str,
+    category: str,
     tahun: str,
     filename: str,
     *,
@@ -256,11 +301,12 @@ def resolve_product_summary_md(
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base= settings.product_summaries_base_path>/<product>/<tahun>/<filename>_summary.md"""
+    """<base = settings.product_summaries_base_path>/<category>/<tahun>/<filename>_summary.md"""
     fname = _norm_summary_md_filename(filename)
     return _resolve_under_base(
         settings.product_summaries_base_path,
         product,
+        category,
         tahun,
         fname,
         project_root=project_root,
@@ -348,75 +394,156 @@ def delete_file(path: Path) -> bool:
 
 
 # ============================================================
+# Helper exist dan list
+# ============================================================
+def exists_product_pdf(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bool:
+    info = resolve_product_pdf(
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
+    )
+    return info.full_path.exists()
+
+
+def exists_product_md(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bool:
+    info = resolve_product_md(
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
+    )
+    return info.full_path.exists()
+
+
+def exists_product_summary(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bool:
+    info = resolve_product_summary_md(
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
+    )
+    return info.full_path.exists()
+
+
+def list_product_files(
+    settings, base_attr: str, category: str, tahun: str, pattern: str = "*"
+):
+    """
+    Daftar file di <base_attr>/<category>/<tahun> sesuai pola 'pattern'.
+    base_attr: 'product_base_path' | 'product_md_base_path' | 'product_summaries_base_path'
+    """
+    root = find_project_root()
+    base_rel = getattr(settings, base_attr)
+    from_path = (
+        root
+        / base_rel
+        / _sanitize_component(category)
+        / _sanitize_component(str(tahun))
+    ).resolve()
+    return list(from_path.glob(pattern)) if from_path.exists() else []
+
+
+# ============================================================
 # API siap pakai (ringkas)
 # ============================================================
 def save_product_pdf(
-    settings, product: str, tahun: str, filename: str, data: bytes, *, unique=False
+    settings,
+    product: str,
+    category: str,
+    tahun: str,
+    filename: str,
+    data: bytes,
+    *,
+    unique=False,
 ) -> PathInfo:
     info = resolve_product_pdf(
-        settings, product, tahun, filename, create_dirs=True, unique=unique
+        settings, product, category, tahun, filename, create_dirs=True, unique=unique
     )
     write_bytes_atomic(info.full_path, data)
     return info
 
 
-def open_product_pdf(settings, product: str, tahun: str, filename: str) -> bytes:
+def open_product_pdf(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bytes:
     info = resolve_product_pdf(
-        settings, product, tahun, filename, create_dirs=False, unique=False
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
     )
     return read_bytes(info.full_path)
 
 
-def remove_product_pdf(settings, product: str, tahun: str, filename: str) -> bool:
+def remove_product_pdf(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bool:
     info = resolve_product_pdf(
-        settings, product, tahun, filename, create_dirs=False, unique=False
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
     )
     return delete_file(info.full_path)
 
 
 def save_product_md(
-    settings, product: str, tahun: str, filename: str, markdown: str, *, unique=False
+    settings,
+    product: str,
+    category: str,
+    tahun: str,
+    filename: str,
+    markdown: str,
+    *,
+    unique=False,
 ) -> PathInfo:
     info = resolve_product_md(
-        settings, product, tahun, filename, create_dirs=True, unique=unique
+        settings, product, category, tahun, filename, create_dirs=True, unique=unique
     )
     write_text_atomic(info.full_path, markdown)
     return info
 
 
-def open_product_md(settings, product: str, tahun: str, filename: str) -> str:
+def open_product_md(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> str:
     info = resolve_product_md(
-        settings, product, tahun, filename, create_dirs=False, unique=False
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
     )
     return read_text(info.full_path)
 
 
-def remove_product_md(settings, product: str, tahun: str, filename: str) -> bool:
+def remove_product_md(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bool:
     info = resolve_product_md(
-        settings, product, tahun, filename, create_dirs=False, unique=False
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
     )
     return delete_file(info.full_path)
 
 
 def save_product_summary(
-    settings, product: str, tahun: str, filename: str, markdown: str, *, unique=False
+    settings,
+    product: str,
+    category: str,
+    tahun: str,
+    filename: str,
+    markdown: str,
+    *,
+    unique=False,
 ) -> PathInfo:
     info = resolve_product_summary_md(
-        settings, product, tahun, filename, create_dirs=True, unique=unique
+        settings, product, category, tahun, filename, create_dirs=True, unique=unique
     )
     write_text_atomic(info.full_path, markdown)
     return info
 
 
-def open_product_summary(settings, product: str, tahun: str, filename: str) -> str:
+def open_product_summary(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> str:
     info = resolve_product_summary_md(
-        settings, product, tahun, filename, create_dirs=False, unique=False
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
     )
     return read_text(info.full_path)
 
 
-def remove_product_summary(settings, product: str, tahun: str, filename: str) -> bool:
+def remove_product_summary(
+    settings, product: str, category: str, tahun: str, filename: str
+) -> bool:
     info = resolve_product_summary_md(
-        settings, product, tahun, filename, create_dirs=False, unique=False
+        settings, product, category, tahun, filename, create_dirs=False, unique=False
     )
     return delete_file(info.full_path)

@@ -1,3 +1,4 @@
+# mcp_server/utils/kak_path_utils.py
 from __future__ import annotations
 
 import os
@@ -16,6 +17,30 @@ RE_NON_ALNUM = re.compile(r"[^a-z0-9]+")  # non-alfanumerik -> underscore
 RE_MULTI_UNDER = re.compile(r"_+")
 RE_TR_SUMMARY = re.compile(r"(?i)(?:[_\-\s])?summary$")  # akhiran "summary"
 ILLEGAL_WIN_CHARS = r'<>:"/\\|?*'  # karakter ilegal utk komponen nama file (Windows)
+_WINDOWS_RESERVED = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+}
 
 
 def _strip_accents(s: str) -> str:
@@ -38,6 +63,10 @@ def _sanitize_component(name: str) -> str:
     name = RE_NON_ALNUM.sub("_", name)
     name = RE_MULTI_UNDER.sub("_", name).strip("_")
     return name or "untitled"
+
+
+def _avoid_windows_reserved(stem: str) -> str:
+    return f"{stem}_" if stem in _WINDOWS_RESERVED else stem
 
 
 # ============================================================
@@ -97,41 +126,37 @@ def _join_and_resolve(project_root: Path, base_rel: str, filename: str) -> Path:
 # Normalisasi nama file per jenis
 # ============================================================
 def _norm_pdf_filename(src: str) -> str:
-    """
-    Nama file PDF -> <basename>.pdf
-    - dari argumen filename (tanpa tambahan '_summary')
-    - lowercase, spasi → underscore, sanitasi karakter
-    """
-    base = os.path.basename((src or "").strip()).rstrip(" .")
-    base, _ext = os.path.splitext(base)
-    base = _sanitize_component(base)
-    return f"{base}.pdf"
+    # Deprecated: gunakan _norm_pdf_from_project(project)
+    base = _sanitize_component(src)
+    return f"{_avoid_windows_reserved(base)}.pdf"
 
 
 def _norm_md_filename(src: str) -> str:
-    """
-    Nama file MD -> <basename>.md (untuk direktori kak_tor_md)
-    - dari argumen filename (tanpa tambahan '_summary')
-    - lowercase, spasi → underscore, sanitasi karakter
-    """
-    base = os.path.basename((src or "").strip()).rstrip(" .")
-    base, _ext = os.path.splitext(base)
-    base = _sanitize_component(base)
-    return f"{base}.md"
+    # Deprecated: gunakan _norm_md_from_project(project)
+    base = _sanitize_component(src)
+    return f"{_avoid_windows_reserved(base)}.md"
 
 
 def _norm_summary_md_filename(src: str) -> str:
+    # Deprecated: summary kini tanpa suffix. Delegasi ke _norm_md_from_project.
+    base = _sanitize_component(src)
+    return f"{_avoid_windows_reserved(base)}.md"
+
+
+def _project_to_stem(project: str) -> str:
     """
-    Nama file SUMMARY MD -> <basename>_summary.md
-    - pastikan suffix '_summary' meskipun user sudah tulis 'summary' dgn variasi
+    Ambil nama dasar (stem) dari 'project' yang sudah disanitasi & aman.
     """
-    base = os.path.basename((src or "").strip()).rstrip(" .")
-    base, _ext = os.path.splitext(base)
-    base = _sanitize_component(base)
-    if RE_TR_SUMMARY.search(base):
-        base = RE_TR_SUMMARY.sub("", base).rstrip("_- ")
-    base = f"{base}_summary" if base else "summary"
-    return f"{base}.md"
+    stem = _avoid_windows_reserved(_sanitize_component(project or ""))
+    return stem or "untitled"
+
+
+def _norm_pdf_from_project(project: str) -> str:
+    return f"{_project_to_stem(project)}.pdf"
+
+
+def _norm_md_from_project(project: str) -> str:
+    return f"{_project_to_stem(project)}.md"
 
 
 # ============================================================
@@ -148,13 +173,32 @@ def _resolve_under_base(
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
+    """_summary_
+
+    Args:
+        base_dir_rel (str): _description_
+        pelanggan (str): _description_
+        project (str): _description_
+        tahun (str): _description_
+        filename_final (str): _description_
+        project_root (Optional[Path], optional): _description_. Defaults to None.
+        create_dirs (bool, optional): _description_. Defaults to True.
+        unique (bool, optional): _description_. Defaults to False.
+
+    Raises:
+        ValueError: _description_
+        FileNotFoundError: _description_
+
+    Returns:
+        PathInfo: _description_
+    """
     pr = (project_root or find_project_root()).resolve()
 
     # susun <base>/<pelanggan>/<tahun>
     base_rel = _ensure_rel(base_dir_rel)
-    pelanggan_dir = _sanitize_component(pelanggan)
-    project_sanitize = _sanitize_component(project)
-    tahun_dir = _sanitize_component(str(tahun))
+    pelanggan_dir = _avoid_windows_reserved(_sanitize_component(pelanggan))
+    project_sanitize = _avoid_windows_reserved(_sanitize_component(project))
+    tahun_dir = _avoid_windows_reserved(_sanitize_component(str(tahun)))
     tier_rel = f"{base_rel}/{pelanggan_dir}/{tahun_dir}"
 
     base_abs = (pr / _ensure_rel(tier_rel)).resolve()
@@ -211,14 +255,14 @@ def resolve_kak_pdf(
     pelanggan: str,
     project: str,
     tahun: str,
-    filename: str,
+    filename: str,  # dipertahankan demi kompatibilitas, TIDAK dipakai
     *,
     project_root: Optional[Path] = None,
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base= settings.kak_tor_base_path>/<pelanggan>/<tahun>/<filename>.pdf"""
-    fname = _norm_pdf_filename(filename)
+    """<base= settings.kak_tor_base_path>/<pelanggan>/<tahun>/<project>.pdf"""
+    fname = _norm_pdf_from_project(project)  # <-- KUNCI: dari project
     return _resolve_under_base(
         settings.kak_tor_base_path,
         pelanggan,
@@ -236,14 +280,14 @@ def resolve_kak_md(
     pelanggan: str,
     project: str,
     tahun: str,
-    filename: str,
+    filename: str,  # dipertahankan demi kompatibilitas, TIDAK dipakai
     *,
     project_root: Optional[Path] = None,
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base= settings.kak_tor_md_base_path>/<pelanggan>/<tahun>/<filename>.md"""
-    fname = _norm_md_filename(filename)
+    """<base= settings.kak_tor_md_base_path>/<pelanggan>/<tahun>/<project>.md"""
+    fname = _norm_md_from_project(project)  # <-- KUNCI: dari project
     return _resolve_under_base(
         settings.kak_tor_md_base_path,
         pelanggan,
@@ -261,20 +305,21 @@ def resolve_kak_summary_md(
     pelanggan: str,
     project: str,
     tahun: str,
-    filename: str,
+    filename: str,  # dipertahankan demi kompatibilitas, TIDAK dipakai
     *,
     project_root: Optional[Path] = None,
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base= settings.kak_tor_summaries_base_path>/<pelanggan>/<tahun>/<filename>_summary.md"""
-    fname = _norm_summary_md_filename(filename)
+    """<base= settings.kak_tor_summaries_base_path>/<pelanggan>/<tahun>/<project>.md"""
+    # Tidak ada suffix '_summary' lagi
+    fname = _norm_md_from_project(project)  # <-- KUNCI: dari project
     return _resolve_under_base(
-        settings.kak_tor_summaries_base_path,
-        pelanggan,
-        project,
-        tahun,
-        fname,
+        base_dir_rel=settings.kak_tor_summaries_base_path,
+        pelanggan=pelanggan,
+        project=project,
+        tahun=tahun,
+        filename_final=fname,
         project_root=project_root,
         create_dirs=create_dirs,
         unique=unique,
@@ -360,75 +405,212 @@ def delete_file(path: Path) -> bool:
 
 
 # ============================================================
+# Helper exist dan list
+# ============================================================
+def exists_kak_pdf(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bool:
+    info = resolve_kak_pdf(
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
+    )
+    return info.full_path.exists()
+
+
+def exists_kak_md(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bool:
+    info = resolve_kak_md(
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
+    )
+    return info.full_path.exists()
+
+
+def exists_kak_summary(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bool:
+    info = resolve_kak_summary_md(
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
+    )
+    return info.full_path.exists()
+
+
+def list_kak_files(
+    settings, base_attr: str, pelanggan: str, tahun: str, pattern: str = "*"
+):
+    root = find_project_root()
+    base_rel = getattr(settings, base_attr)
+    from_path = (
+        root
+        / base_rel
+        / _sanitize_component(pelanggan)
+        / _sanitize_component(str(tahun))
+    ).resolve()
+    return list(from_path.glob(pattern)) if from_path.exists() else []
+
+
+# ============================================================
 # API siap pakai (ringkas)
 # ============================================================
 def save_kak_pdf(
-    settings, pelanggan: str, project: str, tahun: str, filename: str, data: bytes, *, unique=False
+    settings,
+    pelanggan: str,
+    project: str,
+    tahun: str,
+    filename: Optional[str],  # diabaikan
+    data: bytes,
+    *,
+    unique=False,
 ) -> PathInfo:
     info = resolve_kak_pdf(
-        settings, pelanggan, project, tahun, filename, create_dirs=True, unique=unique
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        project,  # pakai project untuk konsistensi
+        create_dirs=True,
+        unique=unique,
     )
     write_bytes_atomic(info.full_path, data)
     return info
 
 
-def open_kak_pdf(settings, pelanggan: str, project: str, tahun: str, filename: str) -> bytes:
+def open_kak_pdf(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bytes:
     info = resolve_kak_pdf(
-        settings, pelanggan, project, tahun, filename, create_dirs=False, unique=False
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
     )
     return read_bytes(info.full_path)
 
 
-def remove_kak_pdf(settings, pelanggan: str, project: str, tahun: str, filename: str) -> bool:
+def remove_kak_pdf(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bool:
     info = resolve_kak_pdf(
-        settings, pelanggan, project, tahun, filename, create_dirs=False, unique=False
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
     )
     return delete_file(info.full_path)
 
 
 def save_kak_md(
-    settings, pelanggan: str, project: str, tahun: str, filename: str, markdown: str, *, unique=False
+    settings,
+    pelanggan: str,
+    project: str,
+    tahun: str,
+    filename: Optional[str],  # diabaikan
+    markdown: str,
+    *,
+    unique=False,
 ) -> PathInfo:
     info = resolve_kak_md(
-        settings, pelanggan, project, tahun, filename, create_dirs=True, unique=unique
+        settings, pelanggan, project, tahun, project, create_dirs=True, unique=unique
     )
     write_text_atomic(info.full_path, markdown)
     return info
 
 
-def open_kak_md(settings, pelanggan: str, project: str, tahun: str, filename: str) -> str:
+def open_kak_md(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> str:
     info = resolve_kak_md(
-        settings, pelanggan, project, tahun, filename, create_dirs=False, unique=False
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
     )
     return read_text(info.full_path)
 
 
-def remove_kak_md(settings, pelanggan: str, project: str, tahun: str, filename: str) -> bool:
+def remove_kak_md(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bool:
     info = resolve_kak_md(
-        settings, pelanggan, project, tahun, filename, create_dirs=False, unique=False
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
     )
     return delete_file(info.full_path)
 
 
 def save_kak_summary(
-    settings, pelanggan: str, project: str, tahun: str, filename: str, markdown: str, *, unique=False
+    settings,
+    pelanggan: str,
+    project: str,
+    tahun: str,
+    filename: Optional[str],  # diabaikan
+    markdown: str,
+    *,
+    unique=False,
 ) -> PathInfo:
     info = resolve_kak_summary_md(
-        settings, pelanggan, project, tahun, filename, create_dirs=True, unique=unique
+        settings, pelanggan, project, tahun, project, create_dirs=True, unique=unique
     )
     write_text_atomic(info.full_path, markdown)
     return info
 
 
-def open_kak_summary(settings, pelanggan: str, project: str, tahun: str, filename: str) -> str:
+def open_kak_summary(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> str:
     info = resolve_kak_summary_md(
-        settings, pelanggan, project, tahun, filename, create_dirs=False, unique=False
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
     )
     return read_text(info.full_path)
 
 
-def remove_kak_summary(settings, pelanggan: str, project: str, tahun: str, filename: str) -> bool:
+def remove_kak_summary(
+    settings, pelanggan: str, project: str, tahun: str, filename: Optional[str] = None
+) -> bool:
     info = resolve_kak_summary_md(
-        settings, pelanggan, project, tahun, filename, create_dirs=False, unique=False
+        settings,
+        pelanggan,
+        project,
+        tahun,
+        filename or project,
+        create_dirs=False,
+        unique=False,
     )
     return delete_file(info.full_path)
