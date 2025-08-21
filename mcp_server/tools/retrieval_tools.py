@@ -16,6 +16,16 @@ rag = RAGPipeline(settings)
 async def retrieval(
     query: str, k: Optional[int] = 10, metadata_filter: Optional[Dict[str, Any]] = None
 ):
+    """Retrieval ke vector database.
+
+    Args:
+        query (str): user message
+        k (Optional[int], optional): top k result. Defaults to 10.
+        metadata_filter (Optional[Dict[str, Any]], optional): project, pelanggan, product, category, tahun. Defaults to None.
+
+    Returns:
+        result (Dict[str, Any]): {"status": "success", "message": message, **data}
+    """
     result: Dict[str, Any] = await rag.retrieval(
         query=query, k=k, metadata_filter=metadata_filter
     )

@@ -6,7 +6,7 @@ import asyncio
 import time
 import numpy as np
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Literal, Optional, Protocol, Tuple, Union
 
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
@@ -28,6 +28,7 @@ try:
         MatchValue,
         PointStruct,
         VectorParams,
+        Condition,
     )
 
     _HAS_QDRANT = True
@@ -288,19 +289,65 @@ class LanceDBBackend(VectorStore):
         return int(max(0, after - before))
 
     async def search(
-        self, query_vec: List[float], k: int, where: Optional[str] = None
+        self,
+        query_vec: List[float],
+        k: int,
+        where: Optional[Union[Dict[str, Any], str]] = None,
     ) -> List[Dict[str, Any]]:
+        # Validasi dimensi query vector
+        if len(query_vec) != self.vector_dim:
+            raise ValueError(
+                f"vector_dim mismatch pada query: got {len(query_vec)}, expected {self.vector_dim}"
+            )
+
         builder = await self.table.search(query_vec)  # type: ignore
-        if where:
-            builder = builder.where(where)
-        df = await builder.limit(k).to_pandas()
+
+        # Bangun ekspresi WHERE dari dict (schema-less): {"field": value | [v1,v2,...]}
+        where_expr: Optional[str] = None
+        if isinstance(where, dict) and where:
+
+            def to_sql_lit(v: Any) -> str:
+                if isinstance(v, str):
+                    return "'" + v.replace("'", "''") + "'"
+                if isinstance(v, bool):
+                    return "TRUE" if v else "FALSE"
+                return str(v)
+
+            must_parts: List[str] = []
+            should_parts: List[str] = []
+            for key, val in where.items():
+                if val is None:
+                    continue
+                if isinstance(val, (list, tuple, set)):
+                    lits = ", ".join(to_sql_lit(x) for x in val)
+                    should_parts.append(f"{key} IN ({lits})")
+                else:
+                    must_parts.append(f"{key} = {to_sql_lit(val)}")
+
+            expr_bits: List[str] = []
+            if must_parts:
+                expr_bits.append(" AND ".join(must_parts))
+            if should_parts:
+                expr_bits.append("(" + " OR ".join(should_parts) + ")")
+            where_expr = " AND ".join(expr_bits) if expr_bits else None
+
+        elif isinstance(where, str) and where.strip():
+            where_expr = where.strip()
+
+        if where_expr:
+            builder = builder.where(where_expr)
+
+        df = await builder.limit(int(k)).to_pandas()
         out: List[Dict[str, Any]] = []
         for _, row in df.iterrows():
+            score_val = row.get("score")
+            if score_val is None:
+                score_val = row.get("vector_score", row.get("distance", 0.0))
             out.append(
                 {
                     "text": row.get("text"),
                     "metadata": row.get("metadata") or {},
-                    "score": float(row.get("score", 0.0)),
+                    "score": float(score_val),
                 }
             )
         return out
@@ -442,26 +489,60 @@ class QdrantBackend(VectorStore):
         self,
         query_vec: List[float],
         k: int,
-        where: Optional[str] = None,
-        *,
-        metadata_filter: Optional[Dict[str, Any]] = None,
+        where: Optional[Union[Dict[str, Any], str]] = None,
     ) -> List[Dict[str, Any]]:
-        flt = self._to_filter(where, metadata_filter)
+        # Validasi dimensi query vector
+        if len(query_vec) != self.vector_dim:
+            raise ValueError(
+                f"vector_dim mismatch pada query: got {len(query_vec)}, expected {self.vector_dim}"
+            )
+
+        # Bangun Filter Qdrant dari dict sederhana: {"field": value | [v1, v2, ...]}
+        qfilter: Optional[Filter] = None
+        if isinstance(where, dict) and where:
+            must: List[Condition] = []
+            should: List[Condition] = []
+            for key, val in where.items():
+                if val is None:
+                    continue
+                if isinstance(val, (list, tuple, set)):
+                    # OR antar nilai untuk field yang sama → pakai SHOULD
+                    for v in val:
+                        should.append(
+                            FieldCondition(key=key, match=MatchValue(value=v))
+                        )
+                else:
+                    # AND antar field berbeda → pakai MUST
+                    must.append(FieldCondition(key=key, match=MatchValue(value=val)))
+            if must or should:
+                qfilter = Filter(must=must or None, should=should or None)
+
+        elif isinstance(where, str) and where.strip():
+            # Qdrant tidak menerima ekspresi string seperti LanceDB.
+            # Abaikan atau log-kan sesuai kebutuhan Anda.
+            self.logger.warning(
+                "QdrantBackend.search: parameter 'where' bertipe string diabaikan."
+            )
+
+        # Eksekusi pencarian Qdrant
         res = await self._run(
-            self.client.search,  # type: ignore
+            self.client.search,
             collection_name=self.collection_name,
             query_vector=query_vec,
-            limit=k,
-            query_filter=flt,
+            limit=int(k),
+            query_filter=qfilter,  # beberapa versi menggunakan 'filter', keyword ini kompatibel
+            with_payload=True,
+            with_vectors=False,
         )
+
         out: List[Dict[str, Any]] = []
         for p in res:
             payload = p.payload or {}
             out.append(
                 {
                     "text": payload.get("text"),
-                    "metadata": payload.get("metadata") or {},
-                    "score": float(p.score or 0.0),
+                    "metadata": payload,
+                    "score": float(p.score),
                 }
             )
         return out
@@ -629,24 +710,43 @@ class RAGPipeline:
     def _build_where_from_filter(
         metadata_filter: Optional[Dict[str, Any]],
     ) -> Tuple[Optional[str], Dict[str, Any]]:
-        """Bangun klausa where (untuk LanceDB) & dict filter (untuk Qdrant)."""
+        """Bangun klausa WHERE (LanceDB) & dict filter (Qdrant).
+        - LanceDB: pakai 'metadata.<field>' dan normalisasi string → lower + escape.
+        - Qdrant: kembalikan dict 'cleaned' tanpa prefix 'metadata.' (payload top-level)."""
         if not metadata_filter:
             return None, {}
+
         clauses: List[str] = []
         cleaned: Dict[str, Any] = {}
+
+        def _to_lower(v: Any) -> Any:
+            return v.lower() if isinstance(v, str) else v
+
+        def _sql_lit(v: Any) -> str:
+            if isinstance(v, str):
+                return "'" + v.replace("'", "''").lower() + "'"
+            if isinstance(v, bool):
+                return "TRUE" if v else "FALSE"
+            return str(v)
+
         for field, val in metadata_filter.items():
             if val is None:
                 continue
             key = f"metadata.{field}"
+
             if isinstance(val, (list, tuple, set)):
-                items = ", ".join(f"'{str(v).lower()}'" for v in val)
-                clauses.append(f"{key} IN ({items})")
-                cleaned[field] = [str(v).lower() for v in val]
+                items = [x for x in val if x is not None]
+                if not items:
+                    continue
+                clauses.append(
+                    f"{key} IN ({', '.join(_sql_lit(_to_lower(x)) for x in items)})"
+                )
+                cleaned[field] = [_to_lower(x) for x in items]
             else:
-                sval = str(val).strip().lower()
-                if sval:
-                    clauses.append(f"{key} = '{sval}'")
-                    cleaned[field] = sval
+                sval = _to_lower(val)
+                clauses.append(f"{key} = {_sql_lit(sval)}")
+                cleaned[field] = sval
+
         return (" AND ".join(clauses) if clauses else None), cleaned
 
     def _make_citation(self, meta: Dict[str, Any]) -> str:
@@ -1080,16 +1180,21 @@ class RAGPipeline:
                     return _err("query kosong", time=t.done())
 
                 top_k = int(k or self.settings.retriever_search_k)
+                if top_k <= 0:
+                    top_k = 5  # default aman
 
                 q_vec = await self.embedder.aembed_query(query)
-                where, cleaned_filter = self._build_where_from_filter(metadata_filter)
+                where_expr, cleaned_filter = self._build_where_from_filter(
+                    metadata_filter
+                )
 
+                # Panggilan backend sesuai tipe:
                 if isinstance(self.backend, QdrantBackend):
-                    rows = await self.backend.search(
-                        q_vec, top_k, None, metadata_filter=cleaned_filter
-                    )
+                    # Qdrant menerima dict filter (tanpa 'metadata.' prefix)
+                    rows = await self.backend.search(q_vec, top_k, cleaned_filter)
                 else:
-                    rows = await self.backend.search(q_vec, top_k, where)
+                    # LanceDB menerima where string (pakai 'metadata.<field>')
+                    rows = await self.backend.search(q_vec, top_k, where_expr)
 
                 if not rows:
                     return _ok(
@@ -1109,11 +1214,13 @@ class RAGPipeline:
                             "score": float(r.get("score", 0.0)),
                         }
                     )
+
                 return _ok(
                     "ok",
                     time=t.done(),
                     data={"results": results, "count": len(results)},
                 )
+
             except Exception as e:
                 self.logger.exception("Retrieval error")
                 return _err(f"retrieval gagal: {e}", time=t.done())
