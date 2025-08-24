@@ -125,42 +125,20 @@ def _join_and_resolve(project_root: Path, base_rel: str, filename: str) -> Path:
 # ============================================================
 # Normalisasi nama file per jenis
 # ============================================================
-def _norm_pdf_filename(src: str) -> str:
+def _product_to_stem(product: str) -> str:
     """
-    Nama file PDF -> <basename>.pdf
-    - dari argumen filename (tanpa tambahan '_summary')
-    - lowercase, spasi → underscore, sanitasi karakter
+    Ambil nama dasar (stem) dari 'product' yang sudah disanitasi & aman.
     """
-    base = os.path.basename((src or "").strip()).rstrip(" .")
-    base, _ext = os.path.splitext(base)
-    base = _avoid_windows_reserved(_sanitize_component(base))
-    return f"{base}.pdf"
+    stem = _avoid_windows_reserved(_sanitize_component(product or ""))
+    return stem or "untitled"
 
 
-def _norm_md_filename(src: str) -> str:
-    """
-    Nama file MD -> <basename>.md (untuk direktori product_md)
-    - dari argumen filename (tanpa tambahan '_summary')
-    - lowercase, spasi → underscore, sanitasi karakter
-    """
-    base = os.path.basename((src or "").strip()).rstrip(" .")
-    base, _ext = os.path.splitext(base)
-    base = _avoid_windows_reserved(_sanitize_component(base))
-    return f"{base}.md"
+def _norm_pdf_from_product(product: str) -> str:
+    return f"{_product_to_stem(product)}.pdf"
 
 
-def _norm_summary_md_filename(src: str) -> str:
-    """
-    Nama file SUMMARY MD -> <basename>_summary.md
-    - pastikan suffix '_summary' meskipun user sudah tulis 'summary' dgn variasi
-    """
-    base = os.path.basename((src or "").strip()).rstrip(" .")
-    base, _ext = os.path.splitext(base)
-    base = _sanitize_component(base)
-    if RE_TR_SUMMARY.search(base):
-        base = RE_TR_SUMMARY.sub("", base).rstrip("_- ")
-    base = _avoid_windows_reserved(f"{base}_summary" if base else "summary")
-    return f"{base}.md"
+def _norm_md_from_product(product: str) -> str:
+    return f"{_product_to_stem(product)}.md"
 
 
 # ============================================================
@@ -168,8 +146,8 @@ def _norm_summary_md_filename(src: str) -> str:
 # ============================================================
 def _resolve_under_base(
     base_dir_rel: str,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
     filename_final: str,
     *,
@@ -178,9 +156,9 @@ def _resolve_under_base(
     unique: bool = False,
 ) -> PathInfo:
     """
-    Struktur folder: <base>/<category>/<tahun> lalu file di situ.
-    'product' tidak mempengaruhi struktur folder, namun disimpan pada PathInfo
-    (mirroring 'project_final' di KAK utils untuk logging & audit).
+    Struktur folder: <base>/<category>/<tahun>/<product>.pdf lalu file di situ.
+    'filename' tidak mempengaruhi struktur folder, namun disimpan pada PathInfo
+    (mirroring 'filename_final' di Product utils untuk logging & audit).
     """
     pr = (project_root or find_project_root()).resolve()
 
@@ -242,21 +220,21 @@ def _resolve_under_base(
 # ============================================================
 def resolve_product_pdf(
     settings,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
-    filename: str,
+    filename: str, # dipertahankan demi kompatibilitas, TIDAK dipakai
     *,
     project_root: Optional[Path] = None,
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base = settings.product_base_path>/<category>/<tahun>/<filename>.pdf"""
-    fname = _norm_pdf_filename(filename)
+    """<base = settings.product_base_path>/<category>/<tahun>/<product>.pdf"""
+    fname = _norm_pdf_from_product(product)
     return _resolve_under_base(
         settings.product_base_path,
-        product,
         category,
+        product,
         tahun,
         fname,
         project_root=project_root,
@@ -267,21 +245,21 @@ def resolve_product_pdf(
 
 def resolve_product_md(
     settings,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
-    filename: str,
+    filename: str, # dipertahankan demi kompatibilitas, TIDAK dipakai
     *,
     project_root: Optional[Path] = None,
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base = settings.product_md_base_path>/<category>/<tahun>/<filename>.md"""
-    fname = _norm_md_filename(filename)
+    """<base = settings.product_md_base_path>/<category>/<tahun>/<product>.md"""
+    fname = _norm_md_from_product(product)
     return _resolve_under_base(
         settings.product_md_base_path,
-        product,
         category,
+        product,
         tahun,
         fname,
         project_root=project_root,
@@ -292,21 +270,21 @@ def resolve_product_md(
 
 def resolve_product_summary_md(
     settings,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
-    filename: str,
+    filename: str, # dipertahankan demi kompatibilitas, TIDAK dipakai
     *,
     project_root: Optional[Path] = None,
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """<base = settings.product_summaries_base_path>/<category>/<tahun>/<filename>_summary.md"""
-    fname = _norm_summary_md_filename(filename)
+    """<base = settings.product_summaries_base_path>/<category>/<tahun>/<product>_summary.md"""
+    fname = _norm_md_from_product(product)
     return _resolve_under_base(
         settings.product_summaries_base_path,
-        product,
         category,
+        product,
         tahun,
         fname,
         project_root=project_root,
@@ -400,7 +378,13 @@ def exists_product_pdf(
     settings, product: str, category: str, tahun: str, filename: str
 ) -> bool:
     info = resolve_product_pdf(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return info.full_path.exists()
 
@@ -409,7 +393,13 @@ def exists_product_md(
     settings, product: str, category: str, tahun: str, filename: str
 ) -> bool:
     info = resolve_product_md(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return info.full_path.exists()
 
@@ -418,7 +408,13 @@ def exists_product_summary(
     settings, product: str, category: str, tahun: str, filename: str
 ) -> bool:
     info = resolve_product_summary_md(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return info.full_path.exists()
 
@@ -446,8 +442,8 @@ def list_product_files(
 # ============================================================
 def save_product_pdf(
     settings,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
     filename: str,
     data: bytes,
@@ -455,34 +451,60 @@ def save_product_pdf(
     unique=False,
 ) -> PathInfo:
     info = resolve_product_pdf(
-        settings, product, category, tahun, filename, create_dirs=True, unique=unique
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=True, 
+        unique=unique
     )
     write_bytes_atomic(info.full_path, data)
     return info
 
 
 def open_product_pdf(
-    settings, product: str, category: str, tahun: str, filename: str
+    settings, 
+    category: str, 
+    product: str, 
+    tahun: str, 
+    filename: str
 ) -> bytes:
     info = resolve_product_pdf(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return read_bytes(info.full_path)
 
 
 def remove_product_pdf(
-    settings, product: str, category: str, tahun: str, filename: str
+    settings, 
+    category: str, 
+    product: str, 
+    tahun: str, 
+    filename: str
 ) -> bool:
     info = resolve_product_pdf(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return delete_file(info.full_path)
 
 
 def save_product_md(
     settings,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
     filename: str,
     markdown: str,
@@ -490,34 +512,61 @@ def save_product_md(
     unique=False,
 ) -> PathInfo:
     info = resolve_product_md(
-        settings, product, category, tahun, filename, create_dirs=True, unique=unique
+        settings, 
+        category, 
+
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=True, 
+        unique=unique
     )
     write_text_atomic(info.full_path, markdown)
     return info
 
 
 def open_product_md(
-    settings, product: str, category: str, tahun: str, filename: str
+    settings, 
+    category: str, 
+    product: str, 
+    tahun: str, 
+    filename: str
 ) -> str:
     info = resolve_product_md(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return read_text(info.full_path)
 
 
 def remove_product_md(
-    settings, product: str, category: str, tahun: str, filename: str
+    settings, 
+    category: str, 
+    product: str, 
+    tahun: str, 
+    filename: str
 ) -> bool:
     info = resolve_product_md(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return delete_file(info.full_path)
 
 
 def save_product_summary(
     settings,
-    product: str,
     category: str,
+    product: str,
     tahun: str,
     filename: str,
     markdown: str,
@@ -525,25 +574,51 @@ def save_product_summary(
     unique=False,
 ) -> PathInfo:
     info = resolve_product_summary_md(
-        settings, product, category, tahun, filename, create_dirs=True, unique=unique
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=True, 
+        unique=unique
     )
     write_text_atomic(info.full_path, markdown)
     return info
 
 
 def open_product_summary(
-    settings, product: str, category: str, tahun: str, filename: str
+    settings, 
+    category: str, 
+    product: str, 
+    tahun: str, 
+    filename: str
 ) -> str:
     info = resolve_product_summary_md(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return read_text(info.full_path)
 
 
 def remove_product_summary(
-    settings, product: str, category: str, tahun: str, filename: str
+    settings, 
+    category: str, 
+    product: str, 
+    tahun: str, 
+    filename: str
 ) -> bool:
     info = resolve_product_summary_md(
-        settings, product, category, tahun, filename, create_dirs=False, unique=False
+        settings, 
+        category, 
+        product, 
+        tahun, 
+        filename, 
+        create_dirs=False, 
+        unique=False
     )
     return delete_file(info.full_path)

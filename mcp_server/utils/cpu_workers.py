@@ -37,7 +37,7 @@ def _build_tokenizer(
         model_id or "nomic-ai/nomic-embed-text-v1.5", use_fast=True
     )
     # max_tokens bisa dibiarkan None agar diambil dari tokenizer (jika tersedia)
-    return HuggingFaceTokenizer(tokenizer=tok, max_tokens=max_tokens)
+    return HuggingFaceTokenizer(tokenizer=tok, max_tokens=max_tokens) # type: ignore
 
 
 def convert_and_chunk_pdf_worker(

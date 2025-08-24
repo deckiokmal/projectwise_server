@@ -25,6 +25,17 @@ from mcp_server.utils.logger import get_logger
 logger = get_logger(__name__)
 settings = Settings()  # type: ignore
 
+# Periksa LLM
+try:
+    if str(settings.llm_model).lower().startswith("gpt"):
+        LLM = AsyncOpenAI(api_key=settings.llm_api_key)
+    else:
+        LLM = AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
+except Exception as e:
+    logger.exception(
+        "Gagal inisialisasi AsyncOpenAI (cek LLM_API_KEY / llm_base_url): %s", e
+    )
+
 
 class ToolExecutor(Protocol):
     def __call__(
@@ -66,7 +77,7 @@ class LLMChains:
         self.temperature = float(temperature or 0.0)
         self.max_tokens = max_tokens
         self.timeout_sec = timeout_sec
-        self.client = AsyncOpenAI(api_key=api_key)
+        self.client = LLM
 
     # ======================================================================
     # -------------------------- UTIL INTERNAL ------------------------------

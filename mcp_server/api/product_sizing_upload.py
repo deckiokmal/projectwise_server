@@ -46,48 +46,25 @@ def _background_ingest_sync(
     anyio.run(process_ingest_product_file, filename, category, product, tahun, job_id)
 
 
+# ====================
+# Upload endpoint
+# ====================
 @router.post("/upload-product/")
 async def upload_product(
     background_tasks: BackgroundTasks,
-    product: str = Form(...),
-    category: str = Form(...),
-    tahun: str = Form(...),
     file: UploadFile = File(...),
+    category: str = Form(...),
+    product: str = Form(...),
+    tahun: str = Form(...),
 ):
     """
     status: skipped, pending, running, success, error
     """
-    # 1) Baca bytes file (perbaikan tipe untuk save_kak_pdf)
-    data = await _read_pdf_bytes(file)
-
-    # 2) Simpan file PDF
-    try:
-        pdf_info = save_product_pdf(
-            settings,
-            category=category,
-            product=product,
-            tahun=tahun,
-            filename=str(file.filename),
-            data=data,  # <-- bytes sesuai tipe fungsi
-            unique=True,
-        )
-    finally:
-        # Tutup UploadFile agar tidak bocor descriptor
-        await file.close()
-
-    # 3) Generate job_id
+    unique_key = build_product_unique_key(category, tahun, product)
+    
+    # 1) Jika sudah ada di manifest, langsung skip TANPA menyimpan file
     job_id = str(uuid.uuid4())
-    unique_key = build_product_unique_key(
-        category_final=pdf_info.category_final,
-        tahun=tahun,
-        product_final=pdf_info.product_final,
-    )
-
-    # 4) Cek status ingestion dari kak_tools (berdasar key konten, bukan nama unik)
-    if (
-        getattr(product_tools, "_manifest", None)
-        and unique_key in product_tools._manifest
-    ):
+    if getattr(product_tools, "_manifest", None) and unique_key in product_tools._manifest:
         save_status(
             job_id,
             "skipped",
@@ -103,11 +80,29 @@ async def upload_product(
             }
         )
 
+    # 1) Baca bytes file (perbaikan tipe untuk save_product_pdf)
+    data = await _read_pdf_bytes(file)
+
+    # 2) Simpan file PDF
+    try:
+        pdf_info = save_product_pdf(
+            settings,
+            category=category,
+            product=product,
+            tahun=tahun,
+            filename=str(file.filename),
+            data=data,
+            unique=False,
+        )
+    finally:
+        # Tutup UploadFile agar tidak bocor descriptor
+        await file.close()
+
     # 5) Update status pending
     save_status(
         job_id,
         "pending",
-        "File tersimpan. Menunggu ingestion Product",
+        "File tersimpan. Menunggu ingestion Product Sizing",
         result={"unique_key": unique_key},
     )
 
@@ -122,9 +117,9 @@ async def upload_product(
     # 7) Jalankan ingestion & summary di background (pakai wrapper sinkron)
     background_tasks.add_task(
         _background_ingest_sync,
-        pdf_info.filename_final,
-        pdf_info.product_final,
-        pdf_info.category_final,
+        str(file.filename),
+        category,
+        product,
         tahun,
         job_id,
     )

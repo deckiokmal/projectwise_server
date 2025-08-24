@@ -125,24 +125,6 @@ def _join_and_resolve(project_root: Path, base_rel: str, filename: str) -> Path:
 # ============================================================
 # Normalisasi nama file per jenis
 # ============================================================
-def _norm_pdf_filename(src: str) -> str:
-    # Deprecated: gunakan _norm_pdf_from_project(project)
-    base = _sanitize_component(src)
-    return f"{_avoid_windows_reserved(base)}.pdf"
-
-
-def _norm_md_filename(src: str) -> str:
-    # Deprecated: gunakan _norm_md_from_project(project)
-    base = _sanitize_component(src)
-    return f"{_avoid_windows_reserved(base)}.md"
-
-
-def _norm_summary_md_filename(src: str) -> str:
-    # Deprecated: summary kini tanpa suffix. Delegasi ke _norm_md_from_project.
-    base = _sanitize_component(src)
-    return f"{_avoid_windows_reserved(base)}.md"
-
-
 def _project_to_stem(project: str) -> str:
     """
     Ambil nama dasar (stem) dari 'project' yang sudah disanitasi & aman.
@@ -173,32 +155,18 @@ def _resolve_under_base(
     create_dirs: bool = True,
     unique: bool = False,
 ) -> PathInfo:
-    """_summary_
-
-    Args:
-        base_dir_rel (str): _description_
-        pelanggan (str): _description_
-        project (str): _description_
-        tahun (str): _description_
-        filename_final (str): _description_
-        project_root (Optional[Path], optional): _description_. Defaults to None.
-        create_dirs (bool, optional): _description_. Defaults to True.
-        unique (bool, optional): _description_. Defaults to False.
-
-    Raises:
-        ValueError: _description_
-        FileNotFoundError: _description_
-
-    Returns:
-        PathInfo: _description_
+    """
+    Struktur folder: <base>/<pelanggan>/<tahun>/<project>.pdf lalu file di situ.
+    'filename' tidak mempengaruhi struktur folder, namun disimpan pada PathInfo
+    (mirroring 'filename_final' di KAK utils untuk logging & audit).
     """
     pr = (project_root or find_project_root()).resolve()
 
     # susun <base>/<pelanggan>/<tahun>
     base_rel = _ensure_rel(base_dir_rel)
     pelanggan_dir = _avoid_windows_reserved(_sanitize_component(pelanggan))
-    project_sanitize = _avoid_windows_reserved(_sanitize_component(project))
     tahun_dir = _avoid_windows_reserved(_sanitize_component(str(tahun)))
+    project_sanitize = _avoid_windows_reserved(_sanitize_component(project))
     tier_rel = f"{base_rel}/{pelanggan_dir}/{tahun_dir}"
 
     base_abs = (pr / _ensure_rel(tier_rel)).resolve()

@@ -148,9 +148,10 @@ def product_template_placeholders_tool(
     Lihat placeholder untuk template kategori tertentu.
     product_category: internet | project-nonmigas
     """
-    return doc.get_template_placeholders(
+    result = doc.get_template_placeholders(
         product_category=product_category, template_name=template_name
     )
+    return result
 
 
 @mcp.tool(name="product_proposal_generation")
@@ -166,21 +167,22 @@ def product_generate_proposal_tool(payload: dict) -> dict:
       "summary_filename": "internet_dedicated"
     }
     """
-    return doc.generate_proposal(**payload)
+    result = doc.generate_proposal(**payload)
+    return result
 
 
 # ──────────────────────────────────────────────────────────────
 # Websearch capability using Tavily API (free 1000 Credits/month)
 # ──────────────────────────────────────────────────────────────
 @mcp.tool(name="websearch")
-def websearch_tool(query: str) -> List[Dict]:
+def websearch_tool(query: str, max_results: int = 5) -> List[Dict]:
     """
     Pencarian informasi external dari web/internet.
     gunakan tool ini jika informasi yang dicari tidak ditemukan di retrieval.
     atau jika user meminta pencarian dari internet.
     """
     try:
-        response = tavily_client.search(query, max_results=10)
+        response = tavily_client.search(query, max_results=max_results)
         return response["results"]
     except Exception as e:
         return [{"error": f"Error: {str(e)}"}]

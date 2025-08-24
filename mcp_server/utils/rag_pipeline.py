@@ -149,7 +149,7 @@ class AsyncEmbedder:
             # Default: OpenAI
             self._embed_primary = OpenAIEmbeddings(
                 model=self.settings.embedding_model,
-                api_key=self.settings.llm_api_key,  # type: ignore
+                api_key=self.settings.embed_llm_api_key, # type: ignore
             )
             logger.info("Embedder primary: OpenAIEmbeddings")
             # Siapkan fallback Ollama
@@ -462,7 +462,7 @@ class QdrantBackend(VectorStore):
 
         # Gunakan keyword args agar kompatibel lintas versi client
         await self._run(
-            self.client.upsert, collection_name=self.collection_name, points=points
+            self.client.upsert, collection_name=self.collection_name, points=points # type: ignore
         )  # type: ignore
         return len(points)
 
@@ -520,13 +520,13 @@ class QdrantBackend(VectorStore):
         elif isinstance(where, str) and where.strip():
             # Qdrant tidak menerima ekspresi string seperti LanceDB.
             # Abaikan atau log-kan sesuai kebutuhan Anda.
-            self.logger.warning(
+            logger.warning(
                 "QdrantBackend.search: parameter 'where' bertipe string diabaikan."
             )
 
         # Eksekusi pencarian Qdrant
         res = await self._run(
-            self.client.search,
+            self.client.search, # type: ignore
             collection_name=self.collection_name,
             query_vector=query_vec,
             limit=int(k),
@@ -995,7 +995,7 @@ class RAGPipeline:
                     "filename": filename,
                     "source": filename,
                     "chunk_index": int(
-                        c.get("index") if c.get("index") is not None else len(metas)
+                        c.get("index") if c.get("index") is not None else len(metas) # type: ignore
                     ),
                     "pelanggan": pelanggan,
                     "project": project,
@@ -1098,7 +1098,7 @@ class RAGPipeline:
                     "filename": filename,
                     "source": filename,
                     "chunk_index": int(
-                        c.get("index") if c.get("index") is not None else len(metas)
+                        c.get("index") if c.get("index") is not None else len(metas) # type: ignore
                     ),
                     "category": category,
                     "product": product,

@@ -18,16 +18,17 @@ class Settings(BaseSettings):
     # Model dan parameter LLM
     # ====================================
     ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11443")
-    llm_base_url: str = "https://dekallm.cloudeka.ai/v1"
+    llm_base_url: str = os.getenv("LLM_BASE_URL", "https://api.openai.com")
     llm_api_key: str = os.getenv("LLM_API_KEY", "")
-    embedding_model: str = os.getenv("EMBED_MODEL", "text-embedding-3-small")
     llm_model: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", 0.2))
-    max_token: int = 30000  # 30.000 token untuk ringkasan - qwen25-72b
+    max_token: int = 28000  # 30.000 token untuk ringkasan - qwen25-72b
 
     # RAG Pipeline config Chunk dengan token-aware
-    tokenizer_kind: str = "openai" # hf | openai
-    tokenizer_max_token: int = 128 * 1024 # OpenAI context windows
+    embed_llm_api_key: str = os.getenv("EMBEDDING_LLM_API_KEY", "")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    tokenizer_kind: str = "openai"  # hf | openai
+    tokenizer_max_token: int = 128 * 1024  # OpenAI context windows
 
     # ====================================
     # Direktori penyimpanan dan dokumen
@@ -67,16 +68,14 @@ class Settings(BaseSettings):
     # retriever_search_k: int = 10
 
     # Vector store & backend
-    vector_backend: str = os.getenv("VECTOR_BACKEND", "lancedb") # lancedb|qdrant
+    vector_backend: str = os.getenv("VECTOR_BACKEND", "lancedb")  # lancedb|qdrant
     vector_store_path: str = os.getenv("VECTOR_STORE_PATH", "vectorstore")
-    collection_name: str = os.getenv("VECTOR_COLLECTION", "projectwise")
+    collection_name: str = os.getenv("VECTOR_COLLECTION", "projectwise_mcp")
 
     # Qdrant
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key: Optional[str] = os.getenv("QDRANT_API_KEY")
-    qdrant_distance: str = os.getenv(
-            "QDRANT_DISTANCE", "Cosine"
-    )  # Cosine|Dot|Euclid
+    qdrant_distance: str = os.getenv("QDRANT_DISTANCE", "Cosine")  # Cosine|Dot|Euclid
 
     # Retriever
     retriever_search_k: int = int(os.getenv("RETRIEVER_K", "8"))
@@ -87,7 +86,7 @@ class Settings(BaseSettings):
 
     # Vector dim (akan dihitung dari model jika 0)
     vector_dim: int = int(os.getenv("VECTOR_DIM", "1536"))
-    
+
     # ====================================
     # Base config ENV
     # ====================================

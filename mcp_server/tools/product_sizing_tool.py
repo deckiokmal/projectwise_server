@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from functools import partial
 from typing import Dict, Optional, Any
 from mcp_server.utils.multiprocessing_utils import get_cpu_pool
 
 from mcp_server.settings import Settings
+from mcp_server.utils.cpu_workers import convert_and_chunk_pdf_worker
 
 from mcp_server.utils.logger import get_logger
 from mcp_server.utils.rag_pipeline import RAGPipeline
@@ -16,7 +18,7 @@ from mcp_server.utils.ingestion_manifest_utils import (
     save_manifest,
     build_product_unique_key,
 )
-from mcp_server.utils.helper import summarize_long_product_text
+from mcp_server.utils.helper import batch_summary_long_text
 from mcp_server.utils.product_path_utils import (
     resolve_product_pdf,
     save_product_md,
@@ -46,8 +48,8 @@ class ProductTools:
     async def ingest_product_file(
         self,
         filename: str,
-        product: str,
         category: str,
+        product: str,
         tahun: str,
         overwrite: bool = False,
     ) -> Dict[str, Any]:
@@ -63,18 +65,18 @@ class ProductTools:
         # 1) cek input argument
         if not filename:
             return {"status": "error", "message": "Parameter 'filename' wajib diisi."}
-        if not product:
-            return {"status": "error", "message": "Parameter 'product' wajib diisi."}
         if not category:
             return {"status": "error", "message": "Parameter 'category' wajib diisi."}
+        if not product:
+            return {"status": "error", "message": "Parameter 'product' wajib diisi."}
         if not tahun:
             return {"status": "error", "message": "Parameter 'tahun' wajib diisi."}
 
         # 2) resolve full path kak pdf
         pdf_info = resolve_product_pdf(
             self.settings,
-            product,
             category,
+            product,
             tahun,
             filename,
             create_dirs=False,
@@ -85,15 +87,24 @@ class ProductTools:
 
         try:
             # === 1) CPU-bound di worker (dl_doc dipakai di sana) ===
-            worker_out = await loop.run_in_executor(
-                pool,
-                self.pipeline.convert_and_chunk_pdf,
-                str(pdf_info.full_path),
+            func = partial(
+                convert_and_chunk_pdf_worker,
+                pdf_path=str(pdf_info.full_path),
+                # kirim kwargs melalui partial
+                tokenizer_kind="openai",
+                tokenizer_model=self.settings.embedding_model,
+                tokenizer_max_tokens=128 * 1024,
+                merge_peers=True,
+                export_markdown=True,
             )
-            if worker_out.get("status") != "success":
-                raise RuntimeError(worker_out.get("message") or "Gagal convert/chunk PDF")
+            worker_out = await loop.run_in_executor(pool, func)
 
-            chunks_payload = worker_out["chunks"]        # list[dict]
+            if worker_out.get("status") != "success":
+                raise RuntimeError(
+                    worker_out.get("message") or "Gagal convert/chunk PDF"
+                )
+
+            chunks_payload = worker_out["chunks"]  # list[dict]
             markdown: str | None = worker_out.get("markdown")
 
             # 3. Hapus entri lama di vectorDB jika overwrite
@@ -102,8 +113,8 @@ class ProductTools:
                 logger.info(
                     f"Overwrite aktif. Data lama dihapus: {pdf_info.filename_final}."
                 )
-                
-            # === 3) Embedding + upsert dari payload ===
+
+            # 4) Embedding + upsert dari payload ===
             ingest_result = await self.pipeline.ingest_product_chunks_from_payload(
                 chunks_payload=chunks_payload,
                 filename=pdf_info.filename_final,
@@ -118,15 +129,21 @@ class ProductTools:
             logger.exception(f"Gagal ingest file '{filename}': {e}")
             return {"status": "error", "message": str(e)}
 
-        # === 4) Simpan markdown bila tersedia ===
+        # 5) Simpan markdown bila tersedia ===
         md_info = None
         if markdown:
             md_info = save_product_md(
-                self.settings, product, category, tahun, filename, markdown, unique=overwrite
+                self.settings,
+                category,
+                product,
+                tahun,
+                filename,
+                markdown,
+                unique=overwrite,
             )
 
-        # === 5) Update manifest ===
-        unique_key = build_product_unique_key(product, tahun, category)
+        # 6) Update manifest ===
+        unique_key = build_product_unique_key(category, tahun, product)
         self._manifest[unique_key] = True
         save_manifest(self.manifest_path, self._manifest)
 
@@ -138,10 +155,10 @@ class ProductTools:
 
     async def generate_product_summarize(
         self,
+        filename: str,
         category: str,
         product: str,
         tahun: str,
-        filename: str,
         prompt_instruction: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -152,14 +169,14 @@ class ProductTools:
         logger.info("KnowledgeBae: generate_product_summarize")
 
         # 1) cek input argument
+        if not filename:
+            return {"status": "error", "message": "Parameter 'filename' wajib diisi."}
         if not category:
             return {"status": "error", "message": "Parameter 'category' wajib diisi."}
         if not product:
             return {"status": "error", "message": "Parameter 'product' wajib diisi."}
         if not tahun:
             return {"status": "error", "message": "Parameter 'tahun' wajib diisi."}
-        if not filename:
-            return {"status": "error", "message": "Parameter 'filename' wajib diisi."}
 
         # 2) Baca Markdown KAK/TOR menggunakan util
         md_text = open_product_md(
@@ -182,11 +199,11 @@ class ProductTools:
         # 4) Proses summarize kak menggunakan utils LLMChain
         try:
             # 1. Panggil LLMChain untuk ringkasan
-            summary_llm = await summarize_long_product_text(
+            summary_llm = await batch_summary_long_text(
                 llmchains=self.llmchains,
                 full_text=full_input,
                 instruction=instruction.strip(),
-                model_name=self.llmchains.model,
+                model_name=self.settings.llm_model,
                 max_tokens=self.settings.max_token,
             )
 
@@ -204,8 +221,8 @@ class ProductTools:
             # 2. Simpan ringkasan sebagai file Markdown (nama otomatis *_summary.md)
             summary_info = save_product_summary(
                 self.settings,
-                product=product,
                 category=category,
+                product=product,
                 tahun=tahun,
                 filename=filename,
                 markdown=summary_llm,
@@ -215,19 +232,19 @@ class ProductTools:
             return {
                 "status": "success",
                 "summary": summary_llm,
-                "message": "KAK berhasil di analysis.",
+                "message": "Product berhasil di analysis.",
                 "summary_file": str(summary_info.full_path),
             }
 
         except Exception as e:
-            logger.error(f"Gagal merangkum atau menyimpan KAK/TOR: {e}")
+            logger.error(f"Gagal merangkum atau menyimpan product: {e}")
             return {"status": "error", "message": f"[Gagal menjalankan LLM]: {e}"}
 
     async def read_product_summaries(
         self,
         filename: str,
-        product: str,
         category: str,
+        product: str,
         tahun: str,
     ) -> dict[str, str]:
         """
@@ -241,10 +258,10 @@ class ProductTools:
         # 1) cek input argument
         if not filename or filename.endswith("_summary.md"):
             return {"status": "error", "message": "Parameter 'filename' wajib diisi."}
-        if not product:
-            return {"status": "error", "message": "Parameter 'product' wajib diisi."}
         if not category:
             return {"status": "error", "message": "Parameter 'category' wajib diisi."}
+        if not product:
+            return {"status": "error", "message": "Parameter 'product' wajib diisi."}
         if not tahun:
             return {"status": "error", "message": "Parameter 'tahun' wajib diisi."}
 
@@ -252,8 +269,8 @@ class ProductTools:
         try:
             summaries = open_product_summary(
                 self.settings,
-                product=product,
                 category=category,
+                product=product,
                 tahun=tahun,
                 filename=filename,
             )

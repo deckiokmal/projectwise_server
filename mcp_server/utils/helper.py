@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import tiktoken
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 from mcp_server.utils.logger import get_logger
 from mcp_server.utils.llm_chains import LLMChains
-import json
 
 
 logger = get_logger(__name__)
@@ -86,7 +85,7 @@ def _split_by_token_limit(text: str, tokenizer, max_tokens: int) -> List[str]:
 # ============================================================
 # Helper ringkasan dokumen panjang dengan chunking
 # ============================================================
-async def summarize_long_product_text(
+async def batch_summary_long_text(
     llmchains: LLMChains,
     full_text: str,
     instruction: str,
@@ -101,14 +100,14 @@ async def summarize_long_product_text(
     try:
         # Inisiasi tokenizer
         tokenizer = get_tokenizer(model_name)
-        total_tokens = len(tokenizer.encode(full_text))
+        total_tokens: int = len(tokenizer.encode(full_text))
 
         logger.info(
             f"Token total input: {total_tokens} | Limit per chunk: {max_tokens}"
         )
 
         # Pesan awal - 1
-        msg = [
+        msg: List[Dict[str, Any]] = [
             {"role": "system", "content": instruction},
             {"role": "user", "content": full_text},
         ]
@@ -123,21 +122,20 @@ async def summarize_long_product_text(
             return summary.get("data")  # type: ignore
 
         # Jika panjang → bagi menjadi bagian kecil
-        chunks = _split_by_token_limit(full_text, tokenizer, max_tokens)
+        chunks: List[str] = _split_by_token_limit(full_text, tokenizer, max_tokens)
+        logger.info(f"Teks dipecah menjadi {len(chunks)} bagian untuk diringkas.")
 
-        # Pesan yang telah di chunks
-        msg_part = [
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": chunks},
-        ]
-
-        summaries = []
+        summaries: List[str] = []
 
         # Jalankan summary tiap chunk
         for idx, part in enumerate(chunks):
             logger.info(f"Ringkas bagian {idx + 1}/{len(chunks)}")
             try:
-                part_summary = await llmchains.generate_text(
+                msg_part: List[Dict[str, Any]] = [
+                    {"role": "system", "content": instruction},
+                    {"role": "user", "content": part},
+                ]
+                part_summary: Dict[str, Any] = await llmchains.generate_text(
                     messages_or_input=msg_part, prefer=prefer
                 )
                 summaries.append(part_summary.get("data").strip())  # type: ignore
@@ -145,17 +143,17 @@ async def summarize_long_product_text(
                 logger.warning(f"Gagal ringkas bagian ke-{idx + 1}: {e}")
 
         # Gabungkan semua ringkasan per chunk menjadi satu teks utuh
-        full_summary = "\n\n".join(summaries).strip()
+        full_summary: str = "\n\n".join(summaries).strip()
         if not full_summary:
             raise ValueError("Ringkasan akhir kosong setelah seluruh bagian diringkas.")
 
         # Analysis kembali hasil summary tiap chunks
-        msg_full = [
+        msg_full: List[Dict[str, Any]] = [
             {"role": "system", "content": instruction},
             {"role": "user", "content": full_summary},
         ]
 
-        summary_sum = await llmchains.generate_text(
+        summary_sum: Dict[str, Any] = await llmchains.generate_text(
             messages_or_input=msg_full, prefer=prefer
         )
 
@@ -164,10 +162,4 @@ async def summarize_long_product_text(
 
     except Exception as e:
         logger.error(f"Gagal melakukan ringkasan multi-bagian: {e}")
-        return json.dumps(
-            {
-                "status": "error",
-                "message": "[Ringkasan gagal dibuat karena input terlalu panjang atau kesalahan internal]",
-                "error": e,
-            }
-        )
+        return "[Ringkasan gagal dibuat karena input terlalu panjang atau kesalahan internal]"

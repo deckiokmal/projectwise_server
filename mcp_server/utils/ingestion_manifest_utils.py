@@ -79,7 +79,9 @@ def get_status(job_id: str) -> Dict:
 
 
 # utility build data manifest konsisten kak dan product
-def build_kak_unique_key(pelanggan_final: str, tahun: str, project_final: str) -> str:
+def build_kak_unique_key(
+    pelanggan_final: str, tahun: str, project_final: str
+    ) -> str:
     return f"{pelanggan_final}_{tahun}_{project_final}"
 
 

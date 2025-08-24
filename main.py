@@ -38,7 +38,12 @@ async def lifespan(app: FastAPI):
         logger.info("CPU ProcessPoolExecutor initialized.")
 
         # 2) Pastikan pool dimatikan saat shutdown
-        stack.callback(lambda: shutdown_cpu_pool(wait=False, cancel_futures=True))
+        GRACEFUL_WAIT = getattr(settings, "cpu_pool_graceful_wait", True)
+        CANCEL_FUTURES = getattr(settings, "cpu_pool_cancel_futures", False)
+
+        stack.callback(
+            lambda: shutdown_cpu_pool(wait=GRACEFUL_WAIT, cancel_futures=CANCEL_FUTURES)
+        )
 
         # 3) Jalankan MCP session manager
         await stack.enter_async_context(projectwise_mcp.session_manager.run())
@@ -67,12 +72,23 @@ async def main():
     """Main async entrypoint untuk menjalankan Uvicorn."""
     config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="info")
     server = uvicorn.Server(config)
-    await server.serve()
+    try:
+        await server.serve()
+    except asyncio.CancelledError:
+        logger.info("Serve dibatalkan saat shutdown yang diminta.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    try:
+        asyncio.run(main())
+    except asyncio.CancelledError:
+        logger.info("Shutdown: tugas async dibatalkan (normal saat SIGINT/SIGTERM).")
+    except KeyboardInterrupt:
+        logger.info("Shutdown diminta oleh user (Ctrl+C).")
+    except Exception as e:
+        logger.exception("Kesalahan tak terduga saat shutdown: %s", e)
+    finally:
+        logger.info("Server benar-benar berhenti dengan mulus.")
     """
     Cara menjalankan:
     uv run main.py -> untuk menjalankan FastMCP server

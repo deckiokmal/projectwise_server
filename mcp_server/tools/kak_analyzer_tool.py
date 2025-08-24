@@ -18,7 +18,7 @@ from mcp_server.utils.ingestion_manifest_utils import (
     save_manifest,
     build_kak_unique_key,
 )
-from mcp_server.utils.helper import summarize_long_product_text
+from mcp_server.utils.helper import batch_summary_long_text
 from mcp_server.utils.kak_path_utils import (
     resolve_kak_pdf,
     save_kak_md,
@@ -92,7 +92,7 @@ class KAKTools:
                 pdf_path=str(pdf_info.full_path),
                 # kirim kwargs melalui partial
                 tokenizer_kind="openai",
-                tokenizer_model=self.settings.llm_model,
+                tokenizer_model=self.settings.embedding_model,
                 tokenizer_max_tokens=128 * 1024,
                 merge_peers=True,
                 export_markdown=True,
@@ -114,7 +114,7 @@ class KAKTools:
                     f"Overwrite aktif. Data lama dihapus: {pdf_info.filename_final}."
                 )
 
-            # === 3) Embedding + upsert dari payload ===
+            # 4) Embedding + upsert dari payload ===
             ingest_result = await self.pipeline.ingest_kak_chunks_from_payload(
                 chunks_payload=chunks_payload,
                 filename=pdf_info.filename_final,
@@ -129,7 +129,7 @@ class KAKTools:
             logger.exception(f"Gagal ingest file '{filename}': {e}")
             return {"status": "error", "message": str(e)}
 
-        # === 4) Simpan markdown bila tersedia ===
+        # 5) Simpan markdown bila tersedia ===
         md_info = None
         if markdown:
             md_info = save_kak_md(
@@ -142,7 +142,7 @@ class KAKTools:
                 unique=overwrite,
             )
 
-        # === 5) Update manifest ===
+        # 6) Update manifest ===
         unique_key = build_kak_unique_key(pelanggan, tahun, project)
         self._manifest[unique_key] = True
         save_manifest(self.manifest_path, self._manifest)
@@ -198,7 +198,7 @@ class KAKTools:
         # 4) Proses summarize kak menggunakan utils LLMChain
         try:
             # 1. Panggil LLMChain untuk ringkasan
-            summary_llm = await summarize_long_product_text(
+            summary_llm = await batch_summary_long_text(
                 llmchains=self.llmchains,
                 full_text=full_input,
                 instruction=instruction.strip(),
