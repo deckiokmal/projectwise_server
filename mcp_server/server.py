@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import os
 from dotenv import load_dotenv
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Union, Iterable
+from pathlib import Path
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
@@ -44,15 +45,26 @@ tavily_client = WEBSearch(TAVILY_API_KEY)
 # ====================================================================
 # Hearbeat Message
 # ====================================================================
-@mcp.tool(name="heartbeat")
+@mcp.tool()
 def heartbeat_tool():
+    """Cek kesehatan server MCP.
+
+    Kapan digunakan:
+    - Untuk memastikan server dan koneksi siap sebelum memanggil tool lain.
+
+    Input:
+    - (tidak ada)
+
+    Output:
+    - bool: True jika sehat.
+    """
     return True
 
 
 # ====================================================================
 # KAK Analyer
 # ====================================================================
-@mcp.tool(name="re_analyze_kak")
+@mcp.tool()
 async def re_analyze_kak_tool(
     filename: str,
     pelanggan: str,
@@ -60,10 +72,20 @@ async def re_analyze_kak_tool(
     tahun: str,
     prompt_instruction: Optional[str] = None,
 ):
-    """
-    Analysis ulang kak/tor proyek, hasil analysis proyek kak/tor.
-    Jika file belum pernah di ingest ke dalam database vector (retrieval).
-    lihat informasi --> filename, pelanggan, project, tahun: menggunakan retrieval.
+    """Bangun ulang ringkasan/analisis KAK/TOR proyek.
+
+    Kapan digunakan:
+    - Dokumen/summary belum tersedia atau ingin di-refresh dengan instruksi baru.
+
+    Input:
+    - filename (str): Nama dokumen KAK/TOR.
+    - pelanggan (str): Nama instansi/klien.
+    - project (str): Nama proyek.
+    - tahun (str, YYYY): Tahun proyek.
+    - prompt_instruction (str, opsional): Arah analisis tambahan (gaya/penekanan).
+
+    Output:
+    - dict: Hasil ringkasan/analisis (format ditentukan modul KAKTools).
     """
     result = await kak.generate_kak_summarize(
         filename, pelanggan, project, tahun, prompt_instruction
@@ -71,22 +93,65 @@ async def re_analyze_kak_tool(
     return result
 
 
-@mcp.tool(name="read_kak_analysis")
+@mcp.tool()
 async def read_kak_analysis_tool(
     filename: str, pelanggan: str, project: str, tahun: str
 ):
-    """
-    Baca kak summary analysis, untuk mengetahui lebih banyak tentang suatu proyek/kak.
-    gunakan tool ini setelah melakukan retrieval agar mendapatkan citation terkait proyek/kak.
+    """Ambil ringkasan analisis KAK/TOR yang sudah ada (beserta citation bila ada).
+
+    Kapan digunakan:
+    - Ingin membaca ulang ringkasan tanpa melakukan re-analisis.
+
+    Input:
+    - filename (str), pelanggan (str), project (str), tahun (str, YYYY)
+
+    Output:
+    - dict: Ringkasan analisis yang tersimpan.
     """
     result = await kak.read_kak_summaries(filename, pelanggan, project, tahun)
     return result
 
 
+@mcp.tool()
+def list_kak_file_tool(
+    folder: Union[str, Path] = settings.kak_tor_summaries_base_path,
+    pattern: str = "*",  # filter nama: "*.pdf", "*.py", dsb.
+    recursive: bool = True,  # True untuk scan subfolder
+    absolute: bool = True,  # True -> path absolut
+    follow_symlinks: bool = False,  # ikut link simbolik?
+) -> List[Path]:
+    """
+    Kembalikan daftar path file kak dalam folder.
+    Hanya file (bukan folder). Ditangani aman untuk permission/symlink.
+
+    Raises:
+        FileNotFoundError: jika folder tidak ada
+        NotADirectoryError: jika path bukan folder
+    """
+    p = Path(folder)
+    if not p.exists():
+        raise FileNotFoundError(f"Folder tidak ditemukan: {p}")
+    if not p.is_dir():
+        raise NotADirectoryError(f"Bukan folder: {p}")
+
+    it: Iterable[Path] = p.rglob(pattern) if recursive else p.glob(pattern)
+    out: List[Path] = []
+    for path in it:
+        try:
+            if not follow_symlinks and path.is_symlink():
+                continue
+            if path.is_file():
+                out.append(path.resolve(strict=False) if absolute else path)
+        except PermissionError:
+            # skip item yang tak bisa diakses
+            continue
+    return out
+
+
 # ====================================================================
 # Product Sizing
 # ====================================================================
-@mcp.tool(name="re_generate_product_sizing")
+@mcp.tool()
 async def re_generate_product_sizing_tool(
     category: str,
     product: str,
@@ -94,10 +159,17 @@ async def re_generate_product_sizing_tool(
     filename: str,
     prompt_instruction: Optional[str] = None,
 ):
-    """
-    Generate ulang ringkasan context sizing product, hasil analysis sizing product.
-    Jika file belum pernah di ingest ke dalam database vector (retrieval).
-    Hasil dari tools ini dapat digunakan sebagai acuan menghitung harga layanan/product tertentu.
+    """Bangun ulang ringkasan sizing produk (acuan perhitungan biaya/kapasitas).
+
+    Kapan digunakan:
+    - Ringkasan sizing belum ada atau perlu diperbarui.
+
+    Input:
+    - category (str), product (str), tahun (str, YYYY), filename (str)
+    - prompt_instruction (str, opsional): Arah/penekanan khusus.
+
+    Output:
+    - dict: Ringkasan sizing (format ditentukan ProductTools).
     """
     result = await prod.generate_product_summarize(
         category, product, tahun, filename, prompt_instruction
@@ -105,32 +177,44 @@ async def re_generate_product_sizing_tool(
     return result
 
 
-@mcp.tool(name="read_product_sizing")
+@mcp.tool()
 async def read_product_sizing_tool(
-    filename: str, pelanggan: str, project: str, tahun: str
+    filename: str, category: str, product: str, tahun: str
 ):
+    """Ambil ringkasan sizing produk yang sudah ada.
+
+    Kapan digunakan:
+    - Ingin membaca ulang ringkasan sizing tanpa regenerasi.
+
+    Input:
+    - filename (str), pelanggan (str), project (str), tahun (str, YYYY)
+
+    Output:
+    - dict: Ringkasan sizing produk.
     """
-    Baca product sizing, untuk mengetahui cara menghitung harga suatu product.
-    gunakan tool ini setelah melakukan retrieval agar mendapatkan citation terkait product.
-    """
-    result = await kak.read_kak_summaries(filename, pelanggan, project, tahun)
+    result = await prod.read_product_summaries(filename, category, product, tahun)
     return result
 
 
 # ====================================================================
 # Retrieval (RAG)
 # ====================================================================
-@mcp.tool(name="retrieval")
+@mcp.tool()
 async def retrieval_tool(
     query: str, k: int | None = 10, metadata_filter: Dict[str, Any] | None = None
 ):
-    """
-    retrieval berisi data proyek/kak dan product. ini adalah sumber informasi utama.
-    untuk mendapatkan informasi selengkapnya tentang context suatu proyek/kak dan product.
-    gunakanlah retrieval dengan optional argument: metadata_filter: Dict[str, Any].
-    metadata context proyek/kak: filename, project, pelanggan, tahun
-    metadata context product: filename, category, product, tahun
-    UTAMAKAN QUERY TANPA METADATA.
+    """Retrieval pengetahuan proyek/KAK & produk dari basis vektor.
+
+    Kapan digunakan:
+    - Membutuhkan konteks faktual dari dokumen internal (proyek/KAK/produk).
+
+    Input:
+    - query (str): Pertanyaan/kata kunci natural language.
+    - k (int, opsional): Jumlah item teratas (default 10).
+    - metadata_filter (dict, opsional): Penyaring metadata, mis. {filename, project, pelanggan, tahun, category, product}.
+
+    Output:
+    - dict/list: Hasil retrieval (dokumen/segmen beserta metadata & skor).
     """
     result = await retrieval(query, k, metadata_filter)
     return result
@@ -139,14 +223,21 @@ async def retrieval_tool(
 # ====================================================================
 # Document Generation Tools
 # ====================================================================
-@mcp.tool(name="product_template_placeholder")
+@mcp.tool()
 def product_template_placeholders_tool(
     product_category: str, template_name: str | None = None
 ) -> dict:
-    """
-    Tools ini berguna untuk pembuatan proposal teknis atau penawaran product.
-    Lihat placeholder untuk template kategori tertentu.
-    product_category: internet | project-nonmigas
+    """Lihat placeholder template dokumen penawaran/proposal.
+
+    Kapan digunakan:
+    - Mengetahui variabel yang harus diisi pada template tertentu.
+
+    Input:
+    - product_category (str): Mis. "internet" atau "project-nonmigas".
+    - template_name (str, opsional): Nama template spesifik (jika ada).
+
+    Output:
+    - dict: Daftar placeholder/variabel dan keterangan singkatnya.
     """
     result = doc.get_template_placeholders(
         product_category=product_category, template_name=template_name
@@ -154,18 +245,18 @@ def product_template_placeholders_tool(
     return result
 
 
-@mcp.tool(name="product_proposal_generation")
+@mcp.tool()
 def product_generate_proposal_tool(payload: dict) -> dict:
-    """Generate proposal DOCX dengan opsi integrasi product summary.
-    Contoh payload minimal:
-    {
-      "product_category": "internet",
-      "context": {"judul_proposal": "...", "nama_pelanggan": "..."},
-      "product": "internet",
-      "category": "datacom",
-      "tahun": "2025",
-      "summary_filename": "internet_dedicated"
-    }
+    """Hasilkan file proposal DOCX dengan opsi integrasi ringkasan produk.
+
+    Kapan digunakan:
+    - Membuat proposal teknis/komersial berdasarkan template & ringkasan produk.
+
+    Input (payload: dict minimal):
+    - product_category (str), context (dict), product (str), category (str), tahun (str), summary_filename (str, opsional)
+
+    Output:
+    - dict: Informasi hasil pembuatan (mis. path/file output, metadata).
     """
     result = doc.generate_proposal(**payload)
     return result
@@ -174,12 +265,19 @@ def product_generate_proposal_tool(payload: dict) -> dict:
 # ──────────────────────────────────────────────────────────────
 # Websearch capability using Tavily API (free 1000 Credits/month)
 # ──────────────────────────────────────────────────────────────
-@mcp.tool(name="websearch")
+@mcp.tool()
 def websearch_tool(query: str, max_results: int = 5) -> List[Dict]:
-    """
-    Pencarian informasi external dari web/internet.
-    gunakan tool ini jika informasi yang dicari tidak ditemukan di retrieval.
-    atau jika user meminta pencarian dari internet.
+    """Pencarian informasi eksternal (web) via Tavily.
+
+    Kapan digunakan:
+    - Informasi tidak ada di retrieval/memori, atau pengguna minta sumber web.
+
+    Input:
+    - query (str): Kalimat pencarian.
+    - max_results (int, opsional): Batas hasil (default 5).
+
+    Output:
+    - list[dict]: Daftar hasil (title/url/summary/metadata) atau {"error": "..."} saat gagal.
     """
     try:
         response = tavily_client.search(query, max_results=max_results)
