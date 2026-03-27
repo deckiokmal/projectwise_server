@@ -30,7 +30,7 @@ app.mount("/projectwise", projectwise_mcp.streamable_http_app())
 
 async def main():
     """Main async entrypoint untuk menjalankan Uvicorn."""
-    config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="info")
+    config = uvicorn.Config(app, host="0.0.0.0", port=6000, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
 
